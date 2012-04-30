@@ -111,13 +111,13 @@ class ServiceObject(object):
         ret = {}
         return ret
 
-    def Readdir (self, path, offset):
+    def Readdir (self, path):
         """ Return a directory listing for the given directory at offset
             
             returns a dictionary with the following keys:
 
                 ret["status"] = True for completed, False for failed
-                ret["filename"] =  filename for file at offset in directory
+                ret["filenames"] =  list of filenames in directory
         """
         ret = {}
         return ret
