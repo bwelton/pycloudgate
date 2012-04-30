@@ -217,4 +217,66 @@ class DropboxService(ServiceObject):
         return ret
 
                 
-           
+## Minor Testing            
+if __name__ == "__main__":
+    # init
+    t_class = DropboxService()
+
+    # Test GetTLD()
+    tlds = t_class.GetTLD()
+    for x in tlds:
+        print x
+        
+    # Test Mknode
+    filedir = "Mobile Photos/testfile.png"
+    status = t_class.Mknode(filedir)
+    if status["status"] == True:
+        print "File created correctly"
+    else:
+        print "File not created correctly"
+
+    # Test Write
+    data = "It's not a pyramid scheme, it's a triangle of opportunity."
+    ret = t_class.Write(filedir, data)
+    if ret["status"] == True:
+        print "File correctly written"
+    else:
+        print "File incorrectly written"
+
+    ret = t_class.Read(filedir, 0, -1)
+    if ret["status"] ==  True:
+        if ret["data"] == data:
+            print "Data Read Correctly"
+        else:
+            print "Data does not match"
+    else:
+        print "Could not read data!"
+    
+    status =  t_class.Unlink(filedir)
+    if status["status"] == True:
+        print "File Successfully Deleted"
+    else:
+        print "File failed to delete"
+
+    permfile = t_class.GetPermissionFile()
+    if permfile["status"] == False:
+        print "Could not get permission file"
+    else:
+        print "Permissions found!"
+
+    fakePermissions = {"testperm": [1000, 2000, int("777",10)]}
+    status = t_class.WritePermissions(fakePermissions)
+    if status["status"] == False:
+        print "Did not write out permission file correctly"
+    else:
+        print "Permission file written correctly"
+
+    permfile = t_class.GetPermissionFile()
+    if permfile["status"] == True:
+        if permfile["data"]["testperm"] == [int("1000",10), int("2000",10), int("777",10)]:
+            print "Permission retrieved Correctly"
+        else:
+            print "Permission did not save correctly"
+    else:
+        print "Could not open permission file"
+          
