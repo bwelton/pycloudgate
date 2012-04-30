@@ -113,7 +113,7 @@ class DropboxService(ServiceObject):
             ret["status"] = True
             for entry in permit.split("\n"):
                 filename,uid,gid,mode=entry.split()
-                table[filename] = {uid, gid, mode}
+                table[filename] = [int(uid), int(gid), int(mode)]
             ret["data"] = table
         return ret
 
@@ -130,9 +130,9 @@ class DropboxService(ServiceObject):
 
         f = ""
         for filename in hashtable.keys():
-            f = f + filename + hashtable[filename][0] + hashtable[filename][1] + hashtable[filename][2]
+            f = f + filename + " " + str(hashtable[filename][0]) + " " + str(hashtable[filename][1]) + " " + str(hashtable[filename][2])
 
-        retValue = self.service("/.permission", f, 0)
+        retValue = self.service.write("/.permission", f, 0)
         if retValue == -errno.EACCES:
             ret["status"] = False
         else:
@@ -243,7 +243,7 @@ if __name__ == "__main__":
     else:
         print "File incorrectly written"
 
-    ret = t_class.Read(filedir, 0, -1)
+    ret = t_class.Read(filedir, 0, 1024)
     if ret["status"] ==  True:
         if ret["data"] == data:
             print "Data Read Correctly"
@@ -272,6 +272,7 @@ if __name__ == "__main__":
         print "Permission file written correctly"
 
     permfile = t_class.GetPermissionFile()
+    print permfile
     if permfile["status"] == True:
         if permfile["data"]["testperm"] == [int("1000",10), int("2000",10), int("777",10)]:
             print "Permission retrieved Correctly"
