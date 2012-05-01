@@ -42,9 +42,16 @@ def flag2mode(flags):
 class Xmp(Fuse):
 
     def __init__(self, *args, **kw):
+        self._cache = CacheBase()
+        self._services = [""" List of Services """] 
+        self._directory = {} # Directory map
+
+        ## Initialize Classes
+
+        ## GetTLDS()
+
 
         Fuse.__init__(self, *args, **kw)
-
         # do stuff to set up your filesystem here, if you want
         #import thread
         #thread.start_new_thread(self.mythread, ())
