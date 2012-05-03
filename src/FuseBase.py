@@ -3,15 +3,17 @@
 # Fuse front-end of pycloudgate
 
 import os, sys
-from errno import *
-from stat import *
+import errno
+import stat
 import fcntl
 
 import fuse
 from fuse import Fuse
 
 from CacheBase import CacheClass
-import GoogleCloudInterface
+from GoogleCloudInterface import GoogleCloudService
+#from SugarSyncInterface import SugarSyncWrapper
+#from dropbox_service import DropboxService
 
 
 if not hasattr(fuse, '__version__'):
@@ -32,26 +34,129 @@ def flag2mode(flags):
 
     return m
 
+def fusify_path(path):
+    if path[0] != "/":
+        return "/" + str(path)
+    return str(path)
+
+def unfusify_path(path):
+    if path[0] == "/":
+        return str(path[1:])
+    return str(path)
+
+class MyStat:
+    def __init__(self):
+        self.st_mode = 0
+        self.st_ino = 0
+        self.st_dev = 0
+        self.st_nlink = 0
+        self.st_uid = 0
+        self.st_gid = 0
+        self.st_size = 0
+        self.st_atime = 0
+        self.st_mtime = 0
+        self.st_ctime = 0
+
+    def print_stat(self):
+        print "size: " + str(self.st_size)
+        print "last modified: " + str(self.st_mtime)
+        print "mode: " + str(self.st_mode)
+        print "uid: " + str(self.st_uid)
+        print "gid: " + str(self.st_gid)
+        print "nlink: " + str(self.st_nlink)
+
 
 class PyCloudGate(Fuse):
 
     def __init__(self, *args, **kw):
         self._cache = CacheClass()
-        self._services = ["DropBox", "GoogleCloud", "SugarSync"]  # just hardcode?
+        self._services = ["DropBox", "GoogleCloud", "SugarSync"]  
+        self._servobjs = {}
         self._directory = {} # Directory map
+        self._perms = {}
 
         ## Initialize Classes
+        #TODO: Handle errors of unauthenticated services
+        self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
+        #self._servobjs["SugarSync"] = SugarSyncWrapper("conf.ini")
+        #self._servobjs["DropBox"] = DropBoxService()
 
+        ## loop over all successfully created interfaces
+        for s in self._servobjs:
+            serv = self._servobjs.get(s, None)
+            # If successful...
+            if serv != None:
+                # get TLDs and add to directory structure
+                tmp_tld = serv.GetTLD()
+                if tmp_tld["status"] == True:
+                    del tmp_tld["status"]
+                    for direntry in tmp_tld.keys():
+                        tld_key = unfusify_path(direntry)
 
-        ## GetTLDS()
-
+                        # Handle duplicate file names
+                        #TODO: I'm confused about policy, so I'm just
+                        # skipping duplicates right now...
+                        if tld_key in self._directory:
+                            print "Skipping duplicate TLD file name " + tld_key
+                            continue
+                        # tmp_tld could just be replaced by serv??
+                        self._directory[tld_key] = tmp_tld[direntry]
+                else:
+                    print "Getting top-level directory of "+str(s)+" failed."
+                # Get permissions
+                tmp_perms = serv.GetPermissionFile()
+                if tmp_perms["status"] == True:
+                    for fn in tmp_perms["data"].keys():
+                        if fn not in self._perms:
+                            self._perms[fusify_path(fn)] = tmp_perms["data"][fn]
+                        else:
+                            pass
+                else:
+                    pass
+            
 
         Fuse.__init__(self, *args, **kw)
-        self._root = '/'
+        self._root = "/"
+
+    ## shortlist
+    ##
+    ## Get creation of permissions if not there working
+    ## get file[1,2,3,etc.] working, for now we skip duplicates
+    def getattr(self, path):
+        # Special case for the root
+        if path == self._root:
+            st = MyStat()
+            #TODO: For now, just assuming that if you mounted this, you have
+            # permission to do stuff with it
+            st.st_mode = stat.S_IFDIR | 700
+            st.st_nlink = 2
+            return st
+
+        # retrieve top-level dir name
+        path_parts = path.split("/")
+        tld = path_parts[1]
+        if tld in self._directory:
+            # Choose appropriate object to call GetAttr on with tld
+            ga_ret = self._directory[tld].GetAttr(path)
+            if ga_ret["status"] == False:
+                return -errno.ENOENT
+            st = MyStat()
+            st.st_size = ga_ret["st_size"]
+            st.st_mtime = ga_ret["st_mtime"]
+            st.st_mode = ga_ret["st_mode"]
+            # Handle permissions
+            perm_list = self._perms.get(path, None)
+            if perm_list != None:
+                st.st_uid = perm_list[0]
+                st.st_gid = perm_list[1]
+                st.st_mode = st.st_mode | perm_list[2]
+
+            st.print_stat()
+            return st
+        else:
+            return -errno.ENOENT
 
 """
-    def getattr(self, path):
-        return os.lstat("." + path)
     def readlink(self, path):
         return os.readlink("." + path)
 
