@@ -1,0 +1,12 @@
+To set up Google Cloud Storage:
+
+install gsutil
+https://developers.google.com/storage/docs/gsutil_install
+
+Follow the friendly directions on the above site.  Everything should work
+because I made you both editors on the project.
+
+install boto (python library). It is already included inside gsutil, so just
+add the folder to PYTHONPATH. Add gsutils path to PYTHONPATH as well.
+
+The unit tests on the google bucket should work now!
