@@ -1,23 +1,17 @@
 #!/usr/bin/env python
 
-#    Copyright (C) 2001  Jeff Epler  <jepler@unpythonic.dhs.org>
-#    Copyright (C) 2006  Csaba Henk  <csaba.henk@creo.hu>
-#
-#    This program can be distributed under the terms of the GNU LGPL.
-#    See the file COPYING.
-#
+# Fuse front-end of pycloudgate
 
 import os, sys
 from errno import *
 from stat import *
 import fcntl
-# pull in some spaghetti to make this stuff work without fuse-py being installed
-try:
-    import _find_fuse_parts
-except ImportError:
-    pass
+
 import fuse
 from fuse import Fuse
+
+from CacheBase import CacheClass
+import GoogleCloudInterface
 
 
 if not hasattr(fuse, '__version__'):
@@ -39,27 +33,25 @@ def flag2mode(flags):
     return m
 
 
-class Xmp(Fuse):
+class PyCloudGate(Fuse):
 
     def __init__(self, *args, **kw):
-        self._cache = CacheBase()
-        self._services = [""" List of Services """] 
+        self._cache = CacheClass()
+        self._services = ["DropBox", "GoogleCloud", "SugarSync"]  # just hardcode?
         self._directory = {} # Directory map
 
         ## Initialize Classes
+
 
         ## GetTLDS()
 
 
         Fuse.__init__(self, *args, **kw)
-        # do stuff to set up your filesystem here, if you want
-        #import thread
-        #thread.start_new_thread(self.mythread, ())
-        self.root = '/'
+        self._root = '/'
 
+"""
     def getattr(self, path):
         return os.lstat("." + path)
-
     def readlink(self, path):
         return os.readlink("." + path)
 
@@ -101,6 +93,7 @@ class Xmp(Fuse):
 
     def utime(self, path, times):
         os.utime("." + path, times)
+"""
 
 #    The following utimens method would do the same as the above utime method.
 #    We can't make it better though as the Python stdlib doesn't know of
@@ -109,9 +102,11 @@ class Xmp(Fuse):
 #    def utimens(self, path, ts_acc, ts_mod):
 #      os.utime("." + path, (ts_acc.tv_sec, ts_mod.tv_sec))
 
+"""
     def access(self, path, mode):
         if not os.access("." + path, mode):
             return -EACCES
+"""
 
 #    This is how we could add stub extended attribute handlers...
 #    (We can't have ones which aptly delegate requests to the underlying fs
@@ -133,32 +128,15 @@ class Xmp(Fuse):
 #            return len("".join(aa)) + len(aa)
 #        return aa
 
-    def statfs(self):
-        """
-        Should return an object with statvfs attributes (f_bsize, f_frsize...).
-        Eg., the return value of os.statvfs() is such a thing (since py 2.2).
-        If you are not reusing an existing statvfs object, start with
-        fuse.StatVFS(), and define the attributes.
+    #def statfs(self):
+        #return os.statvfs(".")
 
-        To provide usable information (ie., you want sensible df(1)
-        output, you are suggested to specify the following attributes:
-
-            - f_bsize - preferred size of file blocks, in bytes
-            - f_frsize - fundamental size of file blcoks, in bytes
-                [if you have no idea, use the same as blocksize]
-            - f_blocks - total number of blocks in the filesystem
-            - f_bfree - number of free blocks
-            - f_files - total number of file inodes
-            - f_ffree - nunber of free file inodes
-        """
-
-        return os.statvfs(".")
-
-    def fsinit(self):
-        os.chdir(self.root)
+    #def fsinit(self):
+        #os.chdir(self.root)
 
 
-    ''' NOT USING THIS CLASS '''
+''' NOT USING THIS CLASS '''
+"""
     class XmpFile(object):
 
         def __init__(self, path, flags, *mode):
@@ -239,36 +217,17 @@ class Xmp(Fuse):
                 return -EINVAL
 
             fcntl.lockf(self.fd, op, kw['l_start'], kw['l_len'])
-
-
-    def main(self, *a, **kw):
-
-        self.file_class = self.XmpFile
-
-        return Fuse.main(self, *a, **kw)
-
+"""
 
 def main():
 
-    usage = """
-Userspace nullfs-alike: mirror the filesystem tree from some point on.
+    usage = Fuse.fusage
 
-""" + Fuse.fusage
-
-    server = Xmp(version="%prog " + fuse.__version__,
+    server = PyCloudGate(version="%prog " + fuse.__version__,
                  usage=usage,
                  dash_s_do='setsingle')
 
-    server.parser.add_option(mountopt="root", metavar="PATH", default='/',
-                             help="mirror filesystem from under PATH [default: %default]")
-    server.parse(values=server, errex=1)
-
-    try:
-        if server.fuse_args.mount_expected():
-            os.chdir(server.root)
-    except OSError:
-        print >> sys.stderr, "can't enter root of underlying filesystem"
-        sys.exit(1)
+    server.parse(errex=1)
 
     server.main()
 
