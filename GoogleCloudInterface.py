@@ -67,7 +67,7 @@ class GoogleCloudService(ServiceObject):
         return time.mktime(ptime.timetuple())
 
     def build_dir_index(self, bucket_name):
-        print "building directory index..."
+        #print "building directory index..."
         uri = boto.storage_uri(bucket_name, GOOGLE_STORAGE)
         tmp_dict = self.bdata['dir_index']
         poss_folders = dict()
@@ -76,7 +76,7 @@ class GoogleCloudService(ServiceObject):
         for obj in uri.get_bucket():
             path_parts = str(obj.name).split("/")
             folder = str(obj.name).split("/"+path_parts[-1])
-            print "folder: " + folder[0]
+            #print "folder: " + folder[0]
 
             st = MyStat()
             st.st_mode = stat.S_IFREG
@@ -90,7 +90,7 @@ class GoogleCloudService(ServiceObject):
             obj_dict['stat'] = st
             obj_dict['obj'] = obj
             tmp_dict[str(obj.name)] = obj_dict
-            print "Adding " + str(obj.name) + " to the index AS OBJ"
+            #print "Adding " + str(obj.name) + " to the index AS OBJ"
             
             ret = tmp_dict.get(folder[0],None)
             if ret == None:
@@ -108,10 +108,10 @@ class GoogleCloudService(ServiceObject):
             obj_dict['stat'] = st
             obj_dict['obj'] = None
             tmp_dict[pf] = obj_dict
-            print "Adding " + pf + " to the index AS DIR"
+            #print "Adding " + pf + " to the index AS DIR"
         
         self.bdata['dir_index_built'] = True
-        print "...Done!"
+        #print "...Done!"
 
     def googlify_path(self,path):
         spath = str(path)
