@@ -155,14 +155,24 @@ class PyCloudGate(Fuse):
             return st
         else:
             return -errno.ENOENT
+    
+    def readdir(self, path, offset):
+        # Special case for top-level directory
+        if path == self._root:
+            for tld in self._directory:
+                yield fuse.Direntry(tld)
+        else:
+            path_parts = path.split("/")
+            tld = path_parts[1]
+            if tld in self._directory:
+                rd_ret = self._directory[tld].Readdir(path)
+                if rd_ret["status"] == True:
+                    for name in rd_ret["filenames"]:
+                        yield fuse.Direntry(name)
 
 """
     def readlink(self, path):
         return os.readlink("." + path)
-
-    def readdir(self, path, offset):
-        for e in os.listdir("." + path):
-            yield fuse.Direntry(e)
 
     def unlink(self, path):
         os.unlink("." + path)
