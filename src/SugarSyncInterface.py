@@ -1,7 +1,8 @@
 from pysugarsync import SugarSync
 import ConfigParser
 import datetime
-
+import time
+import stat
 class SugarSyncWrapper(object):
     def __init__(self, filename=None):
         """ Setup's parameters for connection to service. Does other initialization
@@ -13,6 +14,11 @@ class SugarSyncWrapper(object):
         conf.read(filename)
         self._sync = SugarSync(conf=conf)
         self._tldChanged = True
+
+    def _PrepPath(self, path):
+        if path[0] == "/":
+            return path[1:]
+        return path
 
     def GetTLD (self):
         """ Gets the top level directory/file information. 
@@ -29,6 +35,7 @@ class SugarSyncWrapper(object):
         for x in tmp:
             ret[x.GetName()] = self
             self._cache[x.GetName()] = x
+        ret["status"] = True
         self._tldChanged = False
         return ret
 
@@ -91,6 +98,7 @@ class SugarSyncWrapper(object):
                 ret["data"] = data read from the file
         """
         ret = {}
+        pathname = self._PrepPath(pathname)
         fileID = self._LookupPathname(pathname)
         data = self._sync.GetFile(fileID)
         ret["status"] = True
@@ -108,6 +116,7 @@ class SugarSyncWrapper(object):
                 ret["status"] = True for completed, False for failed
         """
         ret = {}
+        pathname = self._PrepPath(pathname)
         fileID = self._LookupPathname(pathname)
         ret["status"] = self._sync.WriteFile(fileID, data)
         return ret
@@ -122,6 +131,7 @@ class SugarSyncWrapper(object):
                 ret["status"] = True for completed, False for failed
         """
         ret = {}
+        pathname = self._PrepPath(pathname)
         folderpath = "/".join(pathname.split("/")[:-1])
         folderID = self._LookupPathname(folderpath)
         ret["status"] = self._sync.CreateFile(folderID, pathname.split("/")[-1])
@@ -137,6 +147,7 @@ class SugarSyncWrapper(object):
                 ret["status"] = True for completed, False for failed
         """
         ret = {}
+        pathname = self._PrepPath(pathname)
         fileID = self._LookupPathname(pathname)
         ret["status"] = self._sync.DeleteFile(fileID)
         if ret["status"] == True:
@@ -201,6 +212,7 @@ class SugarSyncWrapper(object):
                 ret["status"] = True for completed, False for failed
         """
         ret = {}
+        filename = self._PrepPath(filename)
         data =  self.Read(filename, 0, pos)
         ret = self.Write(filename, data["data"])
         return ret
@@ -213,6 +225,7 @@ class SugarSyncWrapper(object):
                 ret["status"] = True for completed, False for failed
         """
         ret = {}
+        pathname = self._PrepPath(pathname)
         path =  pathname.split("/")
         dir = self._LookupPathname("/".join(path[:-1]))
         ret["status"] = self._sync.CreateFolder(dir, path[-1])
@@ -227,6 +240,7 @@ class SugarSyncWrapper(object):
                 ret["list"] = Directory list
         """
         ret = {}
+        path = self._PrepPath(path)
         dir = self._LookupPathname(path)
 
         pathlist = self._sync.GetFolders(dir)
@@ -246,15 +260,18 @@ class SugarSyncWrapper(object):
 
         """
         ret = {}
+        path = self._PrepPath(path)
         if path in self._cache:
-
+            
             ret["status"] = True
             if self._cache[path].GetType() == "SyncFile":
                 ret["st_size"] = int(self._cache[path].GetSize())
-                ret["st_mtime"] = self._cache[path].GetModified()
+                ret["st_mtime"] = int(time.mktime(self._cache[path].GetModified().timetuple()))
+                ret["st_mode"] = stat.S_IFREG
             else:
                 ret["st_size"] = 0
-                ret["st_mtime"] = datetime.datetime.now()
+                ret["st_mtime"] = int(time.mktime(datetime.datetime.now().timetuple()))
+                ret["st_mode"]  = stat.S_IFDIR
         else:
             file =  self._LookupPathname(path)
             if file != None:
@@ -265,10 +282,12 @@ class SugarSyncWrapper(object):
 
             if self._cache[path].GetType() == "SyncFile":
                 ret["st_size"] = int(self._cache[path].GetSize())
-                ret["st_mtime"] = self._cache[path].GetModified()
+                ret["st_mtime"] = int(time.mktime(self._cache[path].GetModified().timetuple()))
+                ret["st_mode"] = stat.S_IFREG
             else:
                 ret["st_size"] = 0
-                ret["st_mtime"] = datetime.datetime.now()
+                ret["st_mtime"] = int(time.mktime(datetime.datetime.now().timetuple()))
+                ret["st_mode"] = stat.S_IFDIR
         return ret
 
 ## Minor Testing            
