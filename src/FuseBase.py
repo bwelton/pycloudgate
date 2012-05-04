@@ -170,14 +170,28 @@ class PyCloudGate(Fuse):
                     for name in rd_ret["filenames"]:
                         yield fuse.Direntry(name)
 
+    def _FindTLD (self, path):
+        """ Find the top level directory mapping for the path specified
+
+            returns the class to call operation on (or None if not availible)
+        """
+        tmp = path.split("/")
+        if tmp[0] in self._directory:
+            return self._directory[tmp[0]]
+        return None
+
+
     def readline (self, path):
         """ Do nothing here, we dont use symlinks """
         return path
-  
+
+#    def unlink(self, path):
+        
+        
 
     
 
-    def unlink
+#    def unlink
 """
     def readlink(self, path):
         return os.readlink("." + path)
