@@ -6,6 +6,10 @@ class CacheClass(object):
         self._cacheMap = {}
         self._openCounts = {}
 
+    def CheckOpen(self, filename):
+        """ Check if a cache file exists for this filename """
+        return filename in self._cacheMap
+
     def OpenCache(self, filename, buf):
         """ Opens a cache file the data buffer contained in buf written to it """
         if filename in self._cacheMap:
@@ -27,7 +31,7 @@ class CacheClass(object):
         return True
           
     
-    def read(self, filename, offset, length):
+    def Read(self, filename, offset, length):
         """ Read a cached file """
         if filename not in self._cacheMap:
             return None
