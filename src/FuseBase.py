@@ -170,6 +170,14 @@ class PyCloudGate(Fuse):
                     for name in rd_ret["filenames"]:
                         yield fuse.Direntry(name)
 
+    def readline (self, path):
+        """ Do nothing here, we dont use symlinks """
+        return path
+  
+
+    
+
+    def unlink
 """
     def readlink(self, path):
         return os.readlink("." + path)
