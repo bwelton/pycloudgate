@@ -185,8 +185,15 @@ class PyCloudGate(Fuse):
         """ Do nothing here, we dont use symlinks """
         return path
 
-#    def unlink(self, path):
-        
+    def unlink(self, path):
+        p = self._FindTLD(path)
+        if p not None:
+            ret = p.unlink(path)
+            if ret["status"] == False:
+                return -errno.ENOENT
+        else:
+            return -errno.ENOENT
+
         
 
     
