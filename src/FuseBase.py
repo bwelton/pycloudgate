@@ -188,14 +188,18 @@ class PyCloudGate(Fuse):
     def unlink(self, path):
         p = self._FindTLD(path)
         if p not None:
-            ret = p.unlink(path)
+            ret = p.Unlink(path)
             if ret["status"] == False:
                 return -errno.ENOENT
         else:
             return -errno.ENOENT
 
         
+    def rmdir(self, path):
+        ## Calls unlink() since in our case they both do the same thing
+        return self.unlink(path)
 
+ 
     
 
 #    def unlink
