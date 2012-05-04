@@ -187,7 +187,7 @@ class PyCloudGate(Fuse):
 
     def unlink(self, path):
         p = self._FindTLD(path)
-        if p not None:
+        if p != None:
             ret = p.Unlink(path)
             if ret["status"] == False:
                 return -errno.ENOENT
@@ -200,9 +200,39 @@ class PyCloudGate(Fuse):
         return self.unlink(path)
 
  
-    
+    def symlink(self, path, path1):
+        ## We do not support symlinks
+        return -errno.ENOENT     
 
-#    def unlink
+     
+    def read(self, path, length, offset):
+        if self._cache.CheckOpen(path):
+            return self._cache.Read(path, offset, length)
+        else:
+            p = self._FindTLD(path)
+            if p != None:
+                a = p.GetAttr(path)
+                ## Read the entire current file if size < 10 MB
+                if a["st_size"] < 10000000:
+                    r = p.Read(path, 0, a["st_size"])
+                    data = r["data"]
+                    self._cache.OpenCache(path, data)
+                    if len(data) > offset + length:
+                        return data[offset:length]
+                    else if len(data) > offset:
+                        return data[offset:]
+                    else:
+                        return -errno.ENOENT
+                else:
+                    data = p.Read(path, offset, length)
+                    if data["status"] == False:
+                        return -errno.ENOENT
+                    else:
+                        return data["data"]
+            else:
+                return -errno.ENOENT
+        
+
 """
     def readlink(self, path):
         return os.readlink("." + path)
