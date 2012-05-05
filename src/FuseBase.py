@@ -11,8 +11,8 @@ import fuse
 from fuse import Fuse
 
 from CacheBase import CacheClass
-from GoogleCloudInterface import GoogleCloudService
-#from SugarSyncInterface import SugarSyncWrapper
+#from GoogleCloudInterface import GoogleCloudService
+from SugarSyncInterface import SugarSyncWrapper
 #from dropbox_service import DropboxService
 
 
@@ -77,8 +77,8 @@ class PyCloudGate(Fuse):
 
         ## Initialize Classes
         #TODO: Handle errors of unauthenticated services
-        self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
-        #self._servobjs["SugarSync"] = SugarSyncWrapper("conf.ini")
+        #self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
+        self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
         #self._servobjs["DropBox"] = DropBoxService()
 
         ## loop over all successfully created interfaces
@@ -123,6 +123,7 @@ class PyCloudGate(Fuse):
     ## Get creation of permissions if not there working
     ## get file[1,2,3,etc.] working, for now we skip duplicates
     def getattr(self, path):
+        print "LOOKING UP: " + path
         # Special case for the root
         if path == self._root:
             st = MyStat()
@@ -150,7 +151,11 @@ class PyCloudGate(Fuse):
                 st.st_uid = perm_list[0]
                 st.st_gid = perm_list[1]
                 st.st_mode = st.st_mode | perm_list[2]
-
+            # No permissions found, set user/group to curren user
+            else:
+                st.st_uid = os.getuid()
+                st.st_gid = os.getgid()
+                st.st_mode = st.st_mode | stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC 
             st.print_stat()
             return st
         else:
@@ -175,7 +180,9 @@ class PyCloudGate(Fuse):
 
             returns the class to call operation on (or None if not availible)
         """
-        tmp = path.split("/")
+        print self._directory
+        tmp = path[1:]
+        tmp = tmp.split("/")
         if tmp[0] in self._directory:
             return self._directory[tmp[0]]
         return None
@@ -206,20 +213,26 @@ class PyCloudGate(Fuse):
 
      
     def read(self, path, length, offset):
+        print "READ PATH: " + path
         if self._cache.CheckOpen(path):
+            print "READING FROM CACHE: " + path
             return self._cache.Read(path, offset, length)
         else:
             p = self._FindTLD(path)
+            print "READING FROM WEB: " + path
             if p != None:
+                print "IN HERE: "
                 a = p.GetAttr(path)
                 ## Read the entire current file if size < 10 MB
                 if a["st_size"] < 10000000:
+                    
                     r = p.Read(path, 0, a["st_size"])
                     data = r["data"]
+                    print "READ X LENGHT: " + str(len(data))
                     self._cache.OpenCache(path, data)
-                    if len(data) > offset + length:
+                    if len(data) >= offset + length:
                         return data[offset:length]
-                    else if len(data) > offset:
+                    elif len(data) >= offset:
                         return data[offset:]
                     else:
                         return -errno.ENOENT

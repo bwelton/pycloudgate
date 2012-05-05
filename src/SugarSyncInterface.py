@@ -72,10 +72,12 @@ class SugarSyncWrapper(object):
             Returns a syncfile class for the path specified (None if does not exist)
         """
         path =  pathname.split("/")
-
+        if pathname in self._cache:
+            return self._cache[pathname]
         if self._tldChanged:
             self.GetTLD()
-
+            self._tldChanged = False
+        
         prev = None
 
         if path[0] in self._cache:
@@ -106,6 +108,7 @@ class SugarSyncWrapper(object):
             ret["data"] = data[1][offset:offset+size]
         else:
             ret["data"] = data[1][offset:]
+        print "READ DATA: " + str(len(ret["data"]))
         return ret
 
     def Write(self, pathname, data):
@@ -241,12 +244,15 @@ class SugarSyncWrapper(object):
         """
         ret = {}
         path = self._PrepPath(path)
+        
         dir = self._LookupPathname(path)
 
         pathlist = self._sync.GetFolders(dir)
         pathlist += self._sync.ListFiles(dir)
-       
-        ret["list"] = pathlist
+        ret["filenames"] = []
+        for x in pathlist:
+            ret["filenames"].append(x.GetName())
+        ret["status"] = True
 
         return ret
 
