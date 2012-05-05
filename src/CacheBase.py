@@ -31,9 +31,6 @@ class CacheClass(object):
         if filename not in self._cacheMap:
             return False
         f = self._cacheMap[filename]
-        f.seek(0,2) 
-        if offset > f.tell():
-            return False 
         f.seek(offset, 0)
         f.write(buf)
         return True

@@ -229,7 +229,7 @@ class PyCloudGate(Fuse):
                     data = r["data"]
                     self._cache.OpenCache(path, data)
                     if len(data) >= offset + length:
-                        return data[offset:length]
+                        return data[offset:offset+length]
                     elif len(data) >= offset:
                         return data[offset:]
                     else:
