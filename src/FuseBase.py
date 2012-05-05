@@ -142,7 +142,10 @@ class PyCloudGate(Fuse):
             if ga_ret["status"] == False:
                 return -errno.ENOENT
             st = MyStat()
-            st.st_size = ga_ret["st_size"]
+            if not self._cache.CheckOpen(path):
+                st.st_size = ga_ret["st_size"]
+            else:
+                st.st_size = self._cache.Size(path)
             st.st_mtime = ga_ret["st_mtime"]
             st.st_mode = ga_ret["st_mode"]
             # Handle permissions
@@ -213,22 +216,17 @@ class PyCloudGate(Fuse):
 
      
     def read(self, path, length, offset):
-        print "READ PATH: " + path
         if self._cache.CheckOpen(path):
-            print "READING FROM CACHE: " + path
             return self._cache.Read(path, offset, length)
         else:
             p = self._FindTLD(path)
-            print "READING FROM WEB: " + path
             if p != None:
-                print "IN HERE: "
                 a = p.GetAttr(path)
                 ## Read the entire current file if size < 10 MB
                 if a["st_size"] < 10000000:
                     
                     r = p.Read(path, 0, a["st_size"])
                     data = r["data"]
-                    print "READ X LENGHT: " + str(len(data))
                     self._cache.OpenCache(path, data)
                     if len(data) >= offset + length:
                         return data[offset:length]
@@ -245,7 +243,55 @@ class PyCloudGate(Fuse):
             else:
                 return -errno.ENOENT
         
+    def write(self, path, buf, offset):
+        if self._cache.CheckOpen(path):
+            self._cache.Write(path, buf, offset)
+        else:
+            p = self._FindTLD(path)
+            if p != None:
+                a = p.GetAttr(path)
+                r = p.Read(path, 0, a["st_size"])
+                data = r["data"]
+                self._cache.OpenCache(path, data)
+                if not self._cache.Write(path, buf, offset):
+                    return -errno.ENOENT
+            else:
+                return -errno.ENOENT
 
+    def chmod(self, path, mode):
+        pass ## Stub                
+    
+    def utime(self, path, times):
+        pass ## Stub
+
+    def chown(self, path, times):
+        pass ## Stub
+    
+    def truncate(self, path, len):
+        if self._cache.CheckOpen(path):
+            self._cache.Truncate(path, len)
+        else:
+            p = self._FindTLD(path)
+            if p != None:
+                status = p.Truncate(path, len) 
+                if status["status"] != True:
+                    return -errno.ENOENT
+            else:
+                return -errno.ENOENT
+
+    def getxattr(self, path, name, size):
+        pass #stub
+
+
+    def release(self, path, flags):
+        data = self._cache.Close(path)
+        p = self._FindTLD(path)
+        if p != None:
+            status = p.Write(path, data)
+            if status["status"] == False:
+                return -errno.ENOENT
+        else:
+            return -errno.ENOENT               
 """
     def readlink(self, path):
         return os.readlink("." + path)

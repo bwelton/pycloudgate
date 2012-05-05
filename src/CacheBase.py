@@ -9,7 +9,14 @@ class CacheClass(object):
     def CheckOpen(self, filename):
         """ Check if a cache file exists for this filename """
         return filename in self._cacheMap
-
+    def Size(self, filename): 
+        f = self._cacheMap[filename]
+        curpos = f.tell()
+        f.seek(0,2) 
+        total = f.tell()
+        f.seek(curpos,0)
+        return int(total)
+        
     def OpenCache(self, filename, buf):
         """ Opens a cache file the data buffer contained in buf written to it """
         if filename in self._cacheMap:
@@ -23,9 +30,10 @@ class CacheClass(object):
 
         if filename not in self._cacheMap:
             return False
-
         f = self._cacheMap[filename]
-        
+        f.seek(0,2) 
+        if offset > f.tell():
+            return False 
         f.seek(offset, 0)
         f.write(buf)
         return True
@@ -41,7 +49,11 @@ class CacheClass(object):
         data = f.read(length)
         return data 
 
-
+    def Truncate(self, filename, size):
+        if filename not in self._cacheMap:
+            return False
+        self._cacheMap[filename].truncate(size)
+        return True
     def Close(self, filename):
         """ read the data from the tempfile, close the tempfile, return the data"""
 
