@@ -75,10 +75,31 @@ class DropboxLowLevel:
 
         self.api_client = client.DropboxClient(self.sess)
 
+        """ Build cache for all files' metadata requests in a depth first search manner"""
+        self.cache = {}
+        self.BuildIndex("/")
+                 
+    def BuildIndex(self, currentPath):
+        """ Build cache for metadata request for fold/file at currentPath,
+            build for child tree recursively
+        """
+       
+        self.cache[currentPath] = self.api_client.metadata(currentPath)
+        directory = self.readdir(currentPath, 0)
+        for entry in directory:
+            if not entry == "." and not entry == "..":
+                self.BuildIndex(currentPath + "/" + entry) 
+ 
+
+
     def getattr(self, path):
-        st = MyStat()  
+        st = MyStat() 
         try:
-            resp = self.api_client.metadata(path)
+            if path in self.cache:
+                resp = self.cache[path]
+            else:
+                resp = self.api_client.metadata(path)
+                self.cache[path] = resp
             print resp
 
             if 'is_deleted' in resp and resp['is_deleted']:
@@ -92,6 +113,7 @@ class DropboxLowLevel:
             else:
                 st.st_mode = stat.S_IFREG | 0755
                 st.st_nlink = 1
+            self.cache[path] = st
             return st
         except rest.ErrorResponse:
             return -errno.ENOENT
@@ -100,9 +122,12 @@ class DropboxLowLevel:
     def readdir(self, path, mode):
         dirs = [".", ".."]
         try:
-            resp = self.api_client.metadata(path)
+            if path in self.cache:
+                resp = self.cache[path]
+            else:
+                resp = self.api_client.metadata(path)
+                self.cache[path] = resp         
         except rest.ErrorResponse as detail:
-            print detail
             return dirs;
        
         if 'contents' in resp:
@@ -116,7 +141,12 @@ class DropboxLowLevel:
 
     def access(self, path, offset):
         try:
-            resp = self.api_client.metadata(path)
+            if path in self.cache:
+                resp = self.cache[path]
+            else:
+                resp = self.api_client.metadata(path)
+                self.cache[path] = resp         
+
             if 'is_deleted' in resp and resp['is_deleted']:
                return -errno.EACCES
         except rest.ErrorResponse:
@@ -159,14 +189,14 @@ class DropboxLowLevel:
         f = f[:offset] + buf + f[offset+blen:]
 
         try:
-            self.api_client.put_file(path, f, True)
+            self.cache[path] = self.api_client.put_file(path, f, True)
         except rest.ErrorResponse:
             return -errno.EACCES
         return blen
 
     def mknod(self, path, mode, dev):
         try:
-	    self.api_client.put_file(path, " ") 
+	    self.cache[path] = self.api_client.put_file(path, " ") 
         except rest.ErrorResponse:
             return -errno.EACCES
 
@@ -178,19 +208,20 @@ class DropboxLowLevel:
 
     def unlink(self, path):
         try:
-            self.api_client.file_delete(path)
+            self.cache[path] = self.api_client.file_delete(path)
         except rest.ErrorResponse:
             return -errno.EACCES
 
     def rename(self, old, new):
         try:
-            self.api_client.file_move(old, new)
+            self.cache[new] = self.api_client.file_move(old, new)
+            del self.cache[old]
         except rest.ErrorResponse:
             return -errno.EACCES
 
     def mkdir(self, path, mode):
         try:
-            self.api_client.file_create_folder(path)
+            self.cache[path] = self.api_client.file_create_folder(path)
         except rest.ErrorResponse:
             return -errno.EACCES
 
@@ -208,7 +239,7 @@ class DropboxLowLevel:
         f = f[:pos]
 
         try:
-            self.api_client.put_file(path, f)
+            self.cache[path] = self.api_client.put_file(path, f)
         except rest.ErrorResponse:
             return -errno.EACCES
 
