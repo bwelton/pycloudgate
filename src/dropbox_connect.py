@@ -100,12 +100,16 @@ class DropboxLowLevel:
             else:
                 resp = self.api_client.metadata(path)
                 self.cache[path] = resp
-            print resp
+          
 
             if 'is_deleted' in resp and resp['is_deleted']:
                 return -errno.ENOENT
-
             
+           
+            timeStruct = time.strptime(resp["client_mtime"], "%a, %d %b %Y %H:%M:%S +0000")
+            st.st_mtime = int(time.mktime(timeStruct))
+
+                
             st.st_size = resp['bytes']
             if resp["is_dir"]:
 	        st.st_mode = stat.S_IFDIR | 0755
