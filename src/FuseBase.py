@@ -1,23 +1,19 @@
 #!/usr/bin/env python
 
-#    Copyright (C) 2001  Jeff Epler  <jepler@unpythonic.dhs.org>
-#    Copyright (C) 2006  Csaba Henk  <csaba.henk@creo.hu>
-#
-#    This program can be distributed under the terms of the GNU LGPL.
-#    See the file COPYING.
-#
+# Fuse front-end of pycloudgate
 
 import os, sys
-from errno import *
-from stat import *
+import errno
+import stat
 import fcntl
-# pull in some spaghetti to make this stuff work without fuse-py being installed
-try:
-    import _find_fuse_parts
-except ImportError:
-    pass
+
 import fuse
 from fuse import Fuse
+
+from CacheBase import CacheClass
+#from GoogleCloudInterface import GoogleCloudService
+from SugarSyncInterface import SugarSyncWrapper
+#from dropbox_service import DropboxService
 
 
 if not hasattr(fuse, '__version__'):
@@ -38,34 +34,267 @@ def flag2mode(flags):
 
     return m
 
+def fusify_path(path):
+    if path[0] != "/":
+        return "/" + str(path)
+    return str(path)
 
-class Xmp(Fuse):
+def unfusify_path(path):
+    if path[0] == "/":
+        return str(path[1:])
+    return str(path)
+
+class MyStat:
+    def __init__(self):
+        self.st_mode = 0
+        self.st_ino = 0
+        self.st_dev = 0
+        self.st_nlink = 0
+        self.st_uid = 0
+        self.st_gid = 0
+        self.st_size = 0
+        self.st_atime = 0
+        self.st_mtime = 0
+        self.st_ctime = 0
+
+    def print_stat(self):
+        print "size: " + str(self.st_size)
+        print "last modified: " + str(self.st_mtime)
+        print "mode: " + str(self.st_mode)
+        print "uid: " + str(self.st_uid)
+        print "gid: " + str(self.st_gid)
+        print "nlink: " + str(self.st_nlink)
+
+
+class PyCloudGate(Fuse):
 
     def __init__(self, *args, **kw):
-        self._cache = CacheBase()
-        self._services = [""" List of Services """] 
+        self._cache = CacheClass()
+        self._services = ["DropBox", "GoogleCloud", "SugarSync"]  
+        self._servobjs = {}
         self._directory = {} # Directory map
+        self._perms = {}
 
         ## Initialize Classes
+        #TODO: Handle errors of unauthenticated services
+        #self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
+        self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
+        #self._servobjs["DropBox"] = DropBoxService()
 
-        ## GetTLDS()
+        ## loop over all successfully created interfaces
+        for s in self._servobjs:
+            serv = self._servobjs.get(s, None)
+            # If successful...
+            if serv != None:
+                # get TLDs and add to directory structure
+                tmp_tld = serv.GetTLD()
+                if tmp_tld["status"] == True:
+                    del tmp_tld["status"]
+                    for direntry in tmp_tld.keys():
+                        tld_key = unfusify_path(direntry)
 
+                        # Handle duplicate file names
+                        #TODO: I'm confused about policy, so I'm just
+                        # skipping duplicates right now...
+                        if tld_key in self._directory:
+                            print "Skipping duplicate TLD file name " + tld_key
+                            continue
+                        # tmp_tld could just be replaced by serv??
+                        self._directory[tld_key] = tmp_tld[direntry]
+                else:
+                    print "Getting top-level directory of "+str(s)+" failed."
+                # Get permissions
+                tmp_perms = serv.GetPermissionFile()
+                if tmp_perms["status"] == True:
+                    for fn in tmp_perms["data"].keys():
+                        if fn not in self._perms:
+                            self._perms[fusify_path(fn)] = tmp_perms["data"][fn]
+                        else:
+                            pass
+                else:
+                    pass
+            
 
         Fuse.__init__(self, *args, **kw)
-        # do stuff to set up your filesystem here, if you want
-        #import thread
-        #thread.start_new_thread(self.mythread, ())
-        self.root = '/'
+        self._root = "/"
 
+    ## shortlist
+    ##
+    ## Get creation of permissions if not there working
+    ## get file[1,2,3,etc.] working, for now we skip duplicates
     def getattr(self, path):
-        return os.lstat("." + path)
+        print "LOOKING UP: " + path
+        # Special case for the root
+        if path == self._root:
+            st = MyStat()
+            #TODO: For now, just assuming that if you mounted this, you have
+            # permission to do stuff with it
+            st.st_mode = stat.S_IFDIR | 700
+            st.st_nlink = 2
+            return st
 
+        # retrieve top-level dir name
+        path_parts = path.split("/")
+        tld = path_parts[1]
+        if tld in self._directory:
+            # Choose appropriate object to call GetAttr on with tld
+            ga_ret = self._directory[tld].GetAttr(path)
+            if ga_ret["status"] == False:
+                return -errno.ENOENT
+            st = MyStat()
+            if not self._cache.CheckOpen(path):
+                st.st_size = ga_ret["st_size"]
+            else:
+                st.st_size = self._cache.Size(path)
+            st.st_mtime = ga_ret["st_mtime"]
+            st.st_mode = ga_ret["st_mode"]
+            # Handle permissions
+            perm_list = self._perms.get(path, None)
+            if perm_list != None:
+                st.st_uid = perm_list[0]
+                st.st_gid = perm_list[1]
+                st.st_mode = st.st_mode | perm_list[2]
+            # No permissions found, set user/group to curren user
+            else:
+                st.st_uid = os.getuid()
+                st.st_gid = os.getgid()
+                st.st_mode = st.st_mode | stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC 
+            st.print_stat()
+            return st
+        else:
+            return -errno.ENOENT
+    
+    def readdir(self, path, offset):
+        # Special case for top-level directory
+        if path == self._root:
+            for tld in self._directory:
+                yield fuse.Direntry(tld)
+        else:
+            path_parts = path.split("/")
+            tld = path_parts[1]
+            if tld in self._directory:
+                rd_ret = self._directory[tld].Readdir(path)
+                if rd_ret["status"] == True:
+                    for name in rd_ret["filenames"]:
+                        yield fuse.Direntry(name)
+
+    def _FindTLD (self, path):
+        """ Find the top level directory mapping for the path specified
+
+            returns the class to call operation on (or None if not availible)
+        """
+        print self._directory
+        tmp = path[1:]
+        tmp = tmp.split("/")
+        if tmp[0] in self._directory:
+            return self._directory[tmp[0]]
+        return None
+
+
+    def readline (self, path):
+        """ Do nothing here, we dont use symlinks """
+        return path
+
+    def unlink(self, path):
+        p = self._FindTLD(path)
+        if p != None:
+            ret = p.Unlink(path)
+            if ret["status"] == False:
+                return -errno.ENOENT
+        else:
+            return -errno.ENOENT
+
+        
+    def rmdir(self, path):
+        ## Calls unlink() since in our case they both do the same thing
+        return self.unlink(path)
+
+ 
+    def symlink(self, path, path1):
+        ## We do not support symlinks
+        return -errno.ENOENT     
+
+     
+    def read(self, path, length, offset):
+        if self._cache.CheckOpen(path):
+            return self._cache.Read(path, offset, length)
+        else:
+            p = self._FindTLD(path)
+            if p != None:
+                a = p.GetAttr(path)
+                ## Read the entire current file if size < 10 MB
+                if a["st_size"] < 10000000:
+                    
+                    r = p.Read(path, 0, a["st_size"])
+                    data = r["data"]
+                    self._cache.OpenCache(path, data)
+                    if len(data) >= offset + length:
+                        return data[offset:length]
+                    elif len(data) >= offset:
+                        return data[offset:]
+                    else:
+                        return -errno.ENOENT
+                else:
+                    data = p.Read(path, offset, length)
+                    if data["status"] == False:
+                        return -errno.ENOENT
+                    else:
+                        return data["data"]
+            else:
+                return -errno.ENOENT
+        
+    def write(self, path, buf, offset):
+        if self._cache.CheckOpen(path):
+            self._cache.Write(path, buf, offset)
+        else:
+            p = self._FindTLD(path)
+            if p != None:
+                a = p.GetAttr(path)
+                r = p.Read(path, 0, a["st_size"])
+                data = r["data"]
+                self._cache.OpenCache(path, data)
+                if not self._cache.Write(path, buf, offset):
+                    return -errno.ENOENT
+            else:
+                return -errno.ENOENT
+
+    def chmod(self, path, mode):
+        pass ## Stub                
+    
+    def utime(self, path, times):
+        pass ## Stub
+
+    def chown(self, path, times):
+        pass ## Stub
+    
+    def truncate(self, path, len):
+        if self._cache.CheckOpen(path):
+            self._cache.Truncate(path, len)
+        else:
+            p = self._FindTLD(path)
+            if p != None:
+                status = p.Truncate(path, len) 
+                if status["status"] != True:
+                    return -errno.ENOENT
+            else:
+                return -errno.ENOENT
+
+    def getxattr(self, path, name, size):
+        pass #stub
+
+
+    def release(self, path, flags):
+        data = self._cache.Close(path)
+        p = self._FindTLD(path)
+        if p != None:
+            status = p.Write(path, data)
+            if status["status"] == False:
+                return -errno.ENOENT
+        else:
+            return -errno.ENOENT               
+"""
     def readlink(self, path):
         return os.readlink("." + path)
-
-    def readdir(self, path, offset):
-        for e in os.listdir("." + path):
-            yield fuse.Direntry(e)
 
     def unlink(self, path):
         os.unlink("." + path)
@@ -101,6 +330,7 @@ class Xmp(Fuse):
 
     def utime(self, path, times):
         os.utime("." + path, times)
+"""
 
 #    The following utimens method would do the same as the above utime method.
 #    We can't make it better though as the Python stdlib doesn't know of
@@ -109,9 +339,11 @@ class Xmp(Fuse):
 #    def utimens(self, path, ts_acc, ts_mod):
 #      os.utime("." + path, (ts_acc.tv_sec, ts_mod.tv_sec))
 
+"""
     def access(self, path, mode):
         if not os.access("." + path, mode):
             return -EACCES
+"""
 
 #    This is how we could add stub extended attribute handlers...
 #    (We can't have ones which aptly delegate requests to the underlying fs
@@ -133,32 +365,15 @@ class Xmp(Fuse):
 #            return len("".join(aa)) + len(aa)
 #        return aa
 
-    def statfs(self):
-        """
-        Should return an object with statvfs attributes (f_bsize, f_frsize...).
-        Eg., the return value of os.statvfs() is such a thing (since py 2.2).
-        If you are not reusing an existing statvfs object, start with
-        fuse.StatVFS(), and define the attributes.
+    #def statfs(self):
+        #return os.statvfs(".")
 
-        To provide usable information (ie., you want sensible df(1)
-        output, you are suggested to specify the following attributes:
-
-            - f_bsize - preferred size of file blocks, in bytes
-            - f_frsize - fundamental size of file blcoks, in bytes
-                [if you have no idea, use the same as blocksize]
-            - f_blocks - total number of blocks in the filesystem
-            - f_bfree - number of free blocks
-            - f_files - total number of file inodes
-            - f_ffree - nunber of free file inodes
-        """
-
-        return os.statvfs(".")
-
-    def fsinit(self):
-        os.chdir(self.root)
+    #def fsinit(self):
+        #os.chdir(self.root)
 
 
-    ''' NOT USING THIS CLASS '''
+''' NOT USING THIS CLASS '''
+"""
     class XmpFile(object):
 
         def __init__(self, path, flags, *mode):
@@ -239,36 +454,17 @@ class Xmp(Fuse):
                 return -EINVAL
 
             fcntl.lockf(self.fd, op, kw['l_start'], kw['l_len'])
-
-
-    def main(self, *a, **kw):
-
-        self.file_class = self.XmpFile
-
-        return Fuse.main(self, *a, **kw)
-
+"""
 
 def main():
 
-    usage = """
-Userspace nullfs-alike: mirror the filesystem tree from some point on.
+    usage = Fuse.fusage
 
-""" + Fuse.fusage
-
-    server = Xmp(version="%prog " + fuse.__version__,
+    server = PyCloudGate(version="%prog " + fuse.__version__,
                  usage=usage,
                  dash_s_do='setsingle')
 
-    server.parser.add_option(mountopt="root", metavar="PATH", default='/',
-                             help="mirror filesystem from under PATH [default: %default]")
-    server.parse(values=server, errex=1)
-
-    try:
-        if server.fuse_args.mount_expected():
-            os.chdir(server.root)
-    except OSError:
-        print >> sys.stderr, "can't enter root of underlying filesystem"
-        sys.exit(1)
+    server.parse(errex=1)
 
     server.main()
 
