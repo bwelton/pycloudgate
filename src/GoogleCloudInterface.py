@@ -358,20 +358,16 @@ class GoogleCloudService(ServiceObject):
 
         rd_ret = self.Read(self.perm_file, 0, -1)
         if rd_ret["status"] == True:
-            ret["status"] = True
-            ret["data"] = pickle.loads(rd_ret["data"])
-        else:
-            mk_ret = self.Mknode(self.perm_file)
-            if mk_ret["status"] == True:
+            if rd_ret["data"] != "":
                 ret["status"] = True
-                ret["data"] = ""
+                ret["data"] = pickle.loads(rd_ret["data"])
 
         return ret
 
     def WritePermissions (self, hashtable):
         """ Writes the permissions data to the permission file.
 
-            hashtable - hash table of same format as GetPermissionsFile()
+            hashtable - hash table of same format as GetPermissionFile()
 
             returns a dictionary with the following keys:
 
