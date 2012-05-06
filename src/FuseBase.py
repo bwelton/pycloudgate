@@ -112,6 +112,7 @@ class PyCloudGate(Fuse):
                         else:
                             pass
                 else:
+                    # Can write any hash to permission file
                     pass
             
 
@@ -129,7 +130,7 @@ class PyCloudGate(Fuse):
             st = MyStat()
             #TODO: For now, just assuming that if you mounted this, you have
             # permission to do stuff with it
-            st.st_mode = stat.S_IFDIR | 700
+            st.st_mode = stat.S_IFDIR | 0700
             st.st_nlink = 2
             return st
 
@@ -154,7 +155,7 @@ class PyCloudGate(Fuse):
                 st.st_uid = perm_list[0]
                 st.st_gid = perm_list[1]
                 st.st_mode = st.st_mode | perm_list[2]
-            # No permissions found, set user/group to curren user
+            # No permissions found, set user/group to current user
             else:
                 st.st_uid = os.getuid()
                 st.st_gid = os.getgid()
@@ -190,17 +191,20 @@ class PyCloudGate(Fuse):
             return self._directory[tmp[0]]
         return None
 
-
     def readlink (self, path):
         """ Do nothing here, we dont use symlinks """
         return path
 
     def unlink(self, path):
         p = self._FindTLD(path)
+        uf_path = unfusify_path(path)
         if p != None:
             ret = p.Unlink(path)
             if ret["status"] == False:
                 return -errno.ENOENT
+            path_parts = uf_path.split("/")
+            if len(path_parts) == 1:
+                del self._directory[uf_path]
         else:
             return -errno.ENOENT
 
@@ -296,6 +300,46 @@ class PyCloudGate(Fuse):
                 return -errno.ENOENT
         else:
             return -errno.ENOENT               
+    
+    def mknod(self, path, mode, dev):
+        print "mknod path: " + str(path)
+        print "mknod mode: " + str(mode)
+        print "mknod dev: " + str(dev)
+        
+        # Make sure mode is S_IFREG, otherwise we don't support mknod for it
+        if (mode & stat.S_IFREG) != stat.S_IFREG:
+            return -errno.EINVAL
+
+
+        path_parts = unfusify_path(path).split("/")
+        p = None
+        if len(path_parts) > 1:
+            p = self._FindTLD(path)
+        else:
+            # Check if file exists...only need to do this for TLD
+            if path_parts[0] in self._directory:
+                return -errno.EEXIST
+            #TODO: If we are making a file in the TLD, use policy to choose which
+            # service to place it in. 
+            serv_list = self._servobjs.keys()
+            if len(serv_list) < 1:
+                return -errno.EFAULT
+            # just put it in the first one for now
+            p = self._servobjs[serv_list[0]]
+
+        mk_ret = p.Mknode(path)
+        if mk_ret["status"] == False:
+            return mk_ret["errno"]
+
+        if len(path_parts) == 1:
+            # Add to TLD. Needs to be after Mknode to make sure it was successful
+            self._directory[path_parts[0]] = p
+
+        # Add to permissions
+        self._perms[path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
+
+        return 0
+
 """
     def readlink(self, path):
         return os.readlink("." + path)
