@@ -11,8 +11,8 @@ import fuse
 from fuse import Fuse
 
 from CacheBase import CacheClass
-#from GoogleCloudInterface import GoogleCloudService
-from SugarSyncInterface import SugarSyncWrapper
+from GoogleCloudInterface import GoogleCloudService
+#from SugarSyncInterface import SugarSyncWrapper
 #from dropbox_service import DropboxService
 
 
@@ -77,8 +77,8 @@ class PyCloudGate(Fuse):
 
         ## Initialize Classes
         #TODO: Handle errors of unauthenticated services
-        #self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
-        self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
+        self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
+        #self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
         #self._servobjs["DropBox"] = DropBoxService()
 
         ## loop over all successfully created interfaces
@@ -191,7 +191,7 @@ class PyCloudGate(Fuse):
         return None
 
 
-    def readline (self, path):
+    def readlink (self, path):
         """ Do nothing here, we dont use symlinks """
         return path
 
@@ -226,6 +226,8 @@ class PyCloudGate(Fuse):
                 if a["st_size"] < 10000000:
                     
                     r = p.Read(path, 0, a["st_size"])
+                    if r["status"] == False:
+                        return -errno.EINVAL
                     data = r["data"]
                     self._cache.OpenCache(path, data)
                     if len(data) >= offset + length:
@@ -237,7 +239,7 @@ class PyCloudGate(Fuse):
                 else:
                     data = p.Read(path, offset, length)
                     if data["status"] == False:
-                        return -errno.ENOENT
+                        return -errno.EINVAL
                     else:
                         return data["data"]
             else:
@@ -285,6 +287,8 @@ class PyCloudGate(Fuse):
 
     def release(self, path, flags):
         data = self._cache.Close(path)
+        if data == None:
+            return 0
         p = self._FindTLD(path)
         if p != None:
             status = p.Write(path, data)
