@@ -173,6 +173,8 @@ class GoogleCloudService(ServiceObject):
             ret["errno"] = -errno.EISDIR
             return ret
 
+        out_str = None
+
         try:
             out_str = cur_objdict['obj'].get_contents_as_string()
         except boto.exception.GSResponseError,e:
@@ -182,7 +184,10 @@ class GoogleCloudService(ServiceObject):
         file_len = cur_objdict['stat'].st_size
         if size == -1:
             size = file_len
-        #print "file_len: " + str(file_len)
+        
+        if len(out_str) != file_len:
+            ret["errno"] = -errno.EINVAL
+            return ret
 
         out_buf = ''
 
@@ -247,6 +252,11 @@ class GoogleCloudService(ServiceObject):
         ret["status"] = False
 
         obj_name = self.googlify_path(pathname)
+
+        # Return error if file already exists
+        if obj_name in self.bdata['dir_index']:
+            # -errno.EEXIST
+            return ret
 
         # Create object
         uri = boto.storage_uri(self.default_bucket + "/" + obj_name,GOOGLE_STORAGE)
@@ -546,7 +556,7 @@ if __name__ == "__main__":
         print x
 
     # Test Mknode
-    filedir = "Mobile Photos/a/b/c/d/testfile.png"
+    filedir = "testfile.png"
     status = t_class.Mknode(filedir)
     if status["status"] == True:
         print "File created correctly"
@@ -571,6 +581,17 @@ if __name__ == "__main__":
     else:
         print "Could not read data!"
     
+    print "Reading file6"
+    ret = t_class.Read("nfs/file6", 0, -1)
+    if ret["status"] ==  True:
+        if ret["data"] == "file6wr":
+            print "Data Read Correctly"
+        else:
+            print "Data does not match"
+            print "data: " + str(ret["data"])
+    else:
+        print "Could not read data!"
+    
     status = t_class.Readdir("Mobile Photos")
     print status["filenames"]
     print status["status"]
@@ -583,7 +604,6 @@ if __name__ == "__main__":
     status = t_class.Readdir("Mobile Photos/a/b/c/d")
     print status["filenames"]
     print status["status"]
-
 
     ret = t_class.Truncate(filedir, 26)
     if ret["status"] ==  True:
