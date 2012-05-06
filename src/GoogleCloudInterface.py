@@ -250,23 +250,30 @@ class GoogleCloudService(ServiceObject):
         """
         ret = {}
         ret["status"] = False
+        ret["errno"] = 0
 
         obj_name = self.googlify_path(pathname)
 
         # Return error if file already exists
         if obj_name in self.bdata['dir_index']:
-            # -errno.EEXIST
+            ret["errno"] = -errno.EEXIST
             return ret
 
         # Create object
+        uri = None
         uri = boto.storage_uri(self.default_bucket + "/" + obj_name,GOOGLE_STORAGE)
-        if uri == None:
+        if uri == None or uri == "":
+            ret["errno"] = -errno.EFAULT
             return ret
 
         new_obj = None
         try:
             new_obj = uri.new_key()
         except boto.exception.BotoServerError,e:
+            return ret
+
+        if new_obj == None or new_obj == "":
+            ret["errno"] = -errno.EINVAL
             return ret
 
         new_obj.set_contents_from_string('')
