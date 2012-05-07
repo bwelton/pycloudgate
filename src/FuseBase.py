@@ -221,8 +221,10 @@ class PyCloudGate(Fuse):
      
     def read(self, path, length, offset):
         if self._cache.CheckOpen(path):
+            print "FB: read cache hit"
             return self._cache.Read(path, offset, length)
         else:
+            print "FB: read cache miss"
             p = self._FindTLD(path)
             if p != None:
                 a = p.GetAttr(path)
@@ -250,13 +252,20 @@ class PyCloudGate(Fuse):
                 return -errno.ENOENT
         
     def write(self, path, buf, offset):
+        print "FB: write " + path
+        print "write buf: " + str(buf)
+        print "write offset: " + str(offset)
         if self._cache.CheckOpen(path):
+            print "FB: write cache hit"
             self._cache.Write(path, buf, offset)
         else:
+            print "FB: write cache miss"
             p = self._FindTLD(path)
             if p != None:
                 a = p.GetAttr(path)
                 r = p.Read(path, 0, a["st_size"])
+                if r["status"] == False:
+                    return -errno.EINVAL
                 data = r["data"]
                 self._cache.OpenCache(path, data)
                 if not self._cache.Write(path, buf, offset):
@@ -274,9 +283,12 @@ class PyCloudGate(Fuse):
         pass ## Stub
     
     def truncate(self, path, len):
+        print "FB: truncate " + path
         if self._cache.CheckOpen(path):
+            print "FB: Truncate hit in cache"
             self._cache.Truncate(path, len)
         else:
+            print "FB: Truncate missed in cache"
             p = self._FindTLD(path)
             if p != None:
                 status = p.Truncate(path, len) 
@@ -287,7 +299,6 @@ class PyCloudGate(Fuse):
 
     def getxattr(self, path, name, size):
         pass #stub
-
 
     def release(self, path, flags):
         data = self._cache.Close(path)
