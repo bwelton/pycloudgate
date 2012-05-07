@@ -11,8 +11,8 @@ import fuse
 from fuse import Fuse
 
 from CacheBase import CacheClass
-#from GoogleCloudInterface import GoogleCloudService
-from SugarSyncInterface import SugarSyncWrapper
+from GoogleCloudInterface import GoogleCloudService
+#from SugarSyncInterface import SugarSyncWrapper
 #from dropbox_service import DropboxService
 
 
@@ -77,8 +77,8 @@ class PyCloudGate(Fuse):
 
         ## Initialize Classes
         #TODO: Handle errors of unauthenticated services
-        #self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
-        self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
+        self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
+        #self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
         #self._servobjs["DropBox"] = DropBoxService()
 
         ## loop over all successfully created interfaces
@@ -190,6 +190,15 @@ class PyCloudGate(Fuse):
         if tmp[0] in self._directory:
             return self._directory[tmp[0]]
         return None
+
+    def _PickService(self):
+        #TODO: If we are making a file in the TLD, use policy to choose which
+        # service to place it in. 
+        serv_list = self._servobjs.keys()
+        if len(serv_list) < 1:
+            return None
+        # just put it in the first one for now
+        return self._servobjs[serv_list[0]]
 
     def readlink (self, path):
         """ Do nothing here, we dont use symlinks """
@@ -330,13 +339,12 @@ class PyCloudGate(Fuse):
             # Check if file exists...only need to do this for TLD
             if path_parts[0] in self._directory:
                 return -errno.EEXIST
-            #TODO: If we are making a file in the TLD, use policy to choose which
-            # service to place it in. 
-            serv_list = self._servobjs.keys()
-            if len(serv_list) < 1:
-                return -errno.EFAULT
-            # just put it in the first one for now
-            p = self._servobjs[serv_list[0]]
+            
+            # Pick what service this file will go to
+            p = self._PickService()
+
+            if p == None:
+                return -errno.BADF
 
         mk_ret = p.Mknode(path)
         if mk_ret["status"] == False:
@@ -353,13 +361,23 @@ class PyCloudGate(Fuse):
 
     def mkdir(self, path, mode):
         p = self._FindTLD(path)
-        if p != None:
-            ret = p.Mkdir(path) 
-            if ret["status"] == False:
-                return -errno.EINVAL ## Replace with appropriate error
-            self._perms[path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
-        else:
+        uf_path = unfusify_path(path)
+        path_parts = uf_path.split("/")
+        if p == None:
+            
+            # Check if we're trying to write to the TLD
+            if len(path_parts) == 1:
+                p = self._PickService()
+                if p == None:
+                    return -errno.EINVAL ## Replace with appropriate error
+        ret = p.Mkdir(path) 
+        if ret["status"] == False:
             return -errno.EINVAL ## Replace with appropriate error
+        if len(path_parts) == 1:
+            self._directory[uf_path] = p
+        self._perms[path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
+
+        return 0
             
 
     def flush(self, filename):

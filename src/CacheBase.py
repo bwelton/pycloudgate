@@ -22,7 +22,6 @@ class CacheClass(object):
     def isWritten(self, filename):
         return self._dirty[filename]
 
-    
     def OpenCache(self, filename, buf):
         """ Opens a cache file the data buffer contained in buf written to it """
         if filename == None:

@@ -422,7 +422,7 @@ class GoogleCloudService(ServiceObject):
                 ret["status"] = True for completed, False for failed
         """
         ret = {}
-        print "path is " + path
+        print "path is " + pathname
 
         # Create either a bucket if at top-level, else an object
         print "Creating an object directory"
