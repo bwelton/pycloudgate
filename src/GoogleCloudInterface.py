@@ -333,7 +333,16 @@ class GoogleCloudService(ServiceObject):
 
         obj_name = self.googlify_path(pathname)
         nod_dict = self.bdata['dir_index'].get(str(obj_name), None)
+        if nod_dict == None:
+            # set errno to -errno.ENOENT
+            return ret
+
         if (nod_dict['stat'].st_mode & stat.S_IFDIR) == stat.S_IFDIR:
+            print "Tried to unlink directory!"
+            rd_ret = self.Rmdir(obj_name)
+            if rd_ret["status"] == True:
+                print "But it worked!"
+                ret["status"] = True
             # set errno to -errno.EISDIR
             return ret
         elif (nod_dict['stat'].st_mode & stat.S_IFREG) == stat.S_IFREG:
@@ -347,6 +356,25 @@ class GoogleCloudService(ServiceObject):
                 ret["status"] = True
         else:
             print "UNRECOGNIZED FILE MODE!!!"
+
+        return ret
+
+    def Rmdir(self, pathname):
+        ret = {}
+        ret["status"] = False
+
+        obj_name = self.googlify_path(pathname)
+        if obj_name not in self.bdata['dir_index']:
+            return ret
+
+        rd_ret = self.Readdir(obj_name)
+        if (rd_ret["status"] == True) and (len(rd_ret["filenames"]) == 0):
+            del self.bdata['dir_index'][obj_name]
+            ret["status"] = True
+        else:
+            # Directory not empty!
+            ret["errno"] = -errno.ENOTEMPTY
+            return ret
 
         return ret
 
