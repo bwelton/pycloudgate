@@ -364,7 +364,9 @@ class PyCloudGate(Fuse):
         else:
             return -errno.EINVAL
         
-
+    def fsync(self, filename, isfilesync):
+        ## isfilesync doesnt matter to us
+        return self.flush(filename)
             
 """
     def readlink(self, path):
