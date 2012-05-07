@@ -364,12 +364,13 @@ class PyCloudGate(Fuse):
         uf_path = unfusify_path(path)
         path_parts = uf_path.split("/")
         if p == None:
-            
             # Check if we're trying to write to the TLD
             if len(path_parts) == 1:
                 p = self._PickService()
                 if p == None:
                     return -errno.EINVAL ## Replace with appropriate error
+            else:
+                return -errno.EINVAL
         ret = p.Mkdir(path) 
         if ret["status"] == False:
             return -errno.EINVAL ## Replace with appropriate error
