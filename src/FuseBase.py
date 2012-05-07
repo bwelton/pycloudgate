@@ -11,8 +11,8 @@ import fuse
 from fuse import Fuse
 
 from CacheBase import CacheClass
-from GoogleCloudInterface import GoogleCloudService
-#from SugarSyncInterface import SugarSyncWrapper
+#from GoogleCloudInterface import GoogleCloudService
+from SugarSyncInterface import SugarSyncWrapper
 #from dropbox_service import DropboxService
 
 
@@ -77,8 +77,8 @@ class PyCloudGate(Fuse):
 
         ## Initialize Classes
         #TODO: Handle errors of unauthenticated services
-        self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
-        #self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
+        #self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
+        self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
         #self._servobjs["DropBox"] = DropBoxService()
 
         ## loop over all successfully created interfaces
@@ -351,6 +351,34 @@ class PyCloudGate(Fuse):
 
         return 0
 
+    def mkdir(self, path, mode):
+        p = self._FindTLD(path)
+        if p != None:
+            ret = p.Mkdir(path) 
+            if ret["status"] == False:
+                return -errno.EINVAL ## Replace with appropriate error
+            self._perms[path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
+        else:
+            return -errno.EINVAL ## Replace with appropriate error
+            
+
+    def flush(self, filename):
+        if self._cache.CheckOpen(filename) == False:
+            return ## We have nothing to flush 
+
+        p = self._FindTLD(filename)
+        if p != None:
+            total_size = self._cache.Size(filename)
+            if self._cache.isWritten(filename): 
+                data = self._cache.Read(filename, 0, total_size)
+                return self.write(filename, data, 0)
+        else:
+            return -errno.EINVAL
+        
+    def fsync(self, filename, isfilesync):
+        ## isfilesync doesnt matter to us
+        return self.flush(filename)
+            
 """
     def readlink(self, path):
         return os.readlink("." + path)
