@@ -11,8 +11,8 @@ import fuse
 from fuse import Fuse
 
 from CacheBase import CacheClass
-from GoogleCloudInterface import GoogleCloudService
-#from SugarSyncInterface import SugarSyncWrapper
+#from GoogleCloudInterface import GoogleCloudService
+from SugarSyncInterface import SugarSyncWrapper
 #from dropbox_service import DropboxService
 
 
@@ -77,8 +77,8 @@ class PyCloudGate(Fuse):
 
         ## Initialize Classes
         #TODO: Handle errors of unauthenticated services
-        self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
-        #self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
+        #self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
+        self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
         #self._servobjs["DropBox"] = DropBoxService()
 
         ## loop over all successfully created interfaces
@@ -339,6 +339,17 @@ class PyCloudGate(Fuse):
         self._perms[path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
 
         return 0
+
+    def mkdir(self, path, mode):
+        p = self._FindTLD(path)
+        if p != None:
+            ret = p.Mkdir(path) 
+            if ret["status"] == False:
+                return -errno.EINVAL ## Replace with appropriate error
+            self._perms[path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
+        else:
+            return -errno.EINVAL ## Replace with appropriate error
+            
 
 """
     def readlink(self, path):
