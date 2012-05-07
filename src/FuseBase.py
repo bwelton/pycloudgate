@@ -351,6 +351,21 @@ class PyCloudGate(Fuse):
             return -errno.EINVAL ## Replace with appropriate error
             
 
+    def flush(self, filename):
+        if self._cache.CheckOpen(filename) == False:
+            return ## We have nothing to flush 
+
+        p = self._FindTLD(filename)
+        if p != None:
+            total_size = self._cache.Size(filename)
+            if self._cache.isWritten(filename): 
+                data = self._cache.Read(filename, 0, total_size)
+                return self.write(filename, data, 0)
+        else:
+            return -errno.EINVAL
+        
+
+            
 """
     def readlink(self, path):
         return os.readlink("." + path)
