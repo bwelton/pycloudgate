@@ -124,7 +124,7 @@ class PyCloudGate(Fuse):
     ## Get creation of permissions if not there working
     ## get file[1,2,3,etc.] working, for now we skip duplicates
     def getattr(self, path):
-        if self._CheckPerms(path, os.R_OK) == False:
+        if (not self._CheckPerms(path, os.R_OK)) and (not self._IsOwner(path)):
             return -errno.EACCES
         print "LOOKING UP: " + path
         # Special case for the root
@@ -132,7 +132,7 @@ class PyCloudGate(Fuse):
             st = MyStat()
             #TODO: For now, just assuming that if you mounted this, you have
             # permission to do stuff with it
-            st.st_mode = stat.S_IFDIR | 0700
+            st.st_mode = stat.S_IFDIR | 0777
             st.st_nlink = 2
             return st
 
@@ -279,7 +279,7 @@ class PyCloudGate(Fuse):
         return path
 
     def unlink(self, path):
-        # Only owner can delete a file
+        # Only owner of file can delete it
         if self._IsOwner(path) == False:
             return -errno.EACCES
 
@@ -289,6 +289,12 @@ class PyCloudGate(Fuse):
             ret = p.Unlink(path)
             if ret["status"] == False:
                 return -errno.ENOENT
+
+            # Remove record from permissions
+            if path in self._perms:
+                del self._perms[path]
+
+            # Remove from TLD
             path_parts = uf_path.split("/")
             if len(path_parts) == 1:
                 del self._directory[uf_path]
@@ -366,12 +372,26 @@ class PyCloudGate(Fuse):
     def chmod(self, path, mode):
         if self._IsOwner(path) == False:
             return -errno.EACCES
+        p = self._FindTLD(path)
+        if p != None:
+            ga_ret = p.GetAttr(path)
+            if ga_ret["status"] == False:
+                return -errno.ENOENT
+        else:
+            return -errno.ENOENT
+
+        # TODO: We don't store sticky bit
+        self._perms[path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
+        return 0
     
     def utime(self, path, times):
         pass ## Stub
 
     def chown(self, path, times):
-        if self._IsOwner(path) == False:
+        print "chown path: " + str(path)
+        print "chown times: " + str(times)
+        # Only root can execute chown
+        if os.getuid() != 0:
             return -errno.EACCES
     
     def truncate(self, path, len):
