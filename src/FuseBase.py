@@ -11,8 +11,8 @@ import fuse
 from fuse import Fuse
 
 from CacheBase import CacheClass
-from GoogleCloudInterface import GoogleCloudService
-#from SugarSyncInterface import SugarSyncWrapper
+#from GoogleCloudInterface import GoogleCloudService
+from SugarSyncInterface import SugarSyncWrapper
 #from dropbox_service import DropboxService
 
 
@@ -77,8 +77,8 @@ class PyCloudGate(Fuse):
 
         ## Initialize Classes
         #TODO: Handle errors of unauthenticated services
-        self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
-        #self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
+        #self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
+        self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
         #self._servobjs["DropBox"] = DropBoxService()
 
         ## loop over all successfully created interfaces
@@ -369,6 +369,7 @@ class PyCloudGate(Fuse):
             else:
                 return -errno.ENOENT
 
+        return len(buf)
     def chmod(self, path, mode):
         if self._IsOwner(path) == False:
             return -errno.EACCES
@@ -411,8 +412,18 @@ class PyCloudGate(Fuse):
             else:
                 return -errno.ENOENT
 
-    def getxattr(self, path, name, size):
-        pass #stub
+    def removexattr(self, path, name):
+        print "REMOVE X ATTR" + name
+        return 0
+
+    def access(self, path, mode):
+        return 0
+
+    def getxattr(self, path, name, size): 
+        
+        print "getxattr - " + path
+        print "getxattr - " + name
+        return 0
 
     def release(self, path, flags):
         if self._CheckPerms(path, os.R_OK) == False:
@@ -503,7 +514,10 @@ class PyCloudGate(Fuse):
             total_size = self._cache.Size(filename)
             if self._cache.isWritten(filename): 
                 data = self._cache.Read(filename, 0, total_size)
-                return self.write(filename, data, 0)
+                if self.write(filename, data, 0) > 0:
+                    return 0
+                else: 
+                    return -errno.EINVAL
         else:
             return -errno.EINVAL
         
