@@ -124,6 +124,8 @@ class PyCloudGate(Fuse):
     ## Get creation of permissions if not there working
     ## get file[1,2,3,etc.] working, for now we skip duplicates
     def getattr(self, path):
+        if self._CheckPerms(path, os.R_OK) == False:
+            return -errno.EACCES
         print "LOOKING UP: " + path
         # Special case for the root
         if path == self._root:
@@ -200,11 +202,87 @@ class PyCloudGate(Fuse):
         # just put it in the first one for now
         return self._servobjs[serv_list[0]]
 
+    def _CheckPerms(self, path, rwx):
+        """ 
+        path: pathname of what is desired to be operated on (expects slash in front)
+        rwx: Which operation the caller would like to perform
+             os.R_OK = read
+             os.W_OK = write
+             os.X_OK = execute
+
+        returns True if operation is allowed, False if not
+        """
+        # If no permission is set, it is assumed the user can do anything
+        if path not in self._perms:
+            return True
+
+        cur_perms = self._perms[path]
+        cur_uid = os.getuid()
+        cur_gid = os.getgid()
+        perm_level = 0
+        stat_var = None
+
+        if cur_perms[0] == cur_uid:
+            perm_level = 1
+        elif cur_perms[1] == cur_gid:
+            perm_level = 2
+        else:
+            perm_level = 3
+
+        if rwx == os.R_OK:
+            if perm_level == 1:
+                stat_var = stat.S_IRUSR
+            elif perm_level == 2:
+                stat_var = stat.S_IRGRP
+            elif perm_level == 3:
+                stat_var = stat.S_IROTH
+        elif rwx == os.W_OK:
+            if perm_level == 1:
+                stat_var = stat.S_IWUSR
+            elif perm_level == 2:
+                stat_var = stat.S_IWGRP
+            elif perm_level == 3:
+                stat_var = stat.S_IWOTH
+        elif rwx == os.X_OK:
+            if perm_level == 1:
+                stat_var = stat.S_IXUSR
+            elif perm_level == 2:
+                stat_var = stat.S_IXGRP
+            elif perm_level == 3:
+                stat_var = stat.S_IXOTH
+        else:
+            print "Warning: Invalid rwx parameter passed to _CheckPerms"
+            return False
+
+        if stat_var == None:
+            return False
+
+        if (cur_perms[2] & stat_var) == stat_var:
+            return True
+        
+        return False
+    
+    def _CheckDirPerms(self, path, rwx):
+        path_parts = path.split("/")
+        file_name = "/"+str(path_parts[-1])
+        dir_name = path.split(file_name)
+        return self._CheckPerms(dir_name[0], rwx)
+
+    def _IsOwner(self, path):
+        if path in self._perms:
+            if os.getuid() != self._perms[path][0]:
+                return False
+        return True
+
     def readlink (self, path):
         """ Do nothing here, we dont use symlinks """
         return path
 
     def unlink(self, path):
+        # Only owner can delete a file
+        if self._IsOwner(path) == False:
+            return -errno.EACCES
+
         p = self._FindTLD(path)
         uf_path = unfusify_path(path)
         if p != None:
@@ -227,8 +305,9 @@ class PyCloudGate(Fuse):
         ## We do not support symlinks
         return -errno.ENOENT     
 
-     
     def read(self, path, length, offset):
+        if self._CheckPerms(path, os.R_OK) == False:
+            return -errno.EACCES
         if self._cache.CheckOpen(path):
             print "FB: read cache hit"
             return self._cache.Read(path, offset, length)
@@ -264,6 +343,8 @@ class PyCloudGate(Fuse):
         print "FB: write " + path
         print "write buf: " + str(buf)
         print "write offset: " + str(offset)
+        if self._CheckPerms(path, os.W_OK) == False:
+            return -errno.EACCES
         if self._cache.CheckOpen(path):
             print "FB: write cache hit"
             self._cache.Write(path, buf, offset)
@@ -283,15 +364,19 @@ class PyCloudGate(Fuse):
                 return -errno.ENOENT
 
     def chmod(self, path, mode):
-        pass ## Stub                
+        if self._IsOwner(path) == False:
+            return -errno.EACCES
     
     def utime(self, path, times):
         pass ## Stub
 
     def chown(self, path, times):
-        pass ## Stub
+        if self._IsOwner(path) == False:
+            return -errno.EACCES
     
     def truncate(self, path, len):
+        if self._CheckPerms(path, os.W_OK) == False:
+            return -errno.EACCES
         print "FB: truncate " + path
         if self._cache.CheckOpen(path):
             print "FB: Truncate hit in cache"
@@ -310,6 +395,8 @@ class PyCloudGate(Fuse):
         pass #stub
 
     def release(self, path, flags):
+        if self._CheckPerms(path, os.R_OK) == False:
+            return -errno.EACCES
         data = self._cache.Close(path)
         if data == None:
             return 0
@@ -325,6 +412,8 @@ class PyCloudGate(Fuse):
         print "mknod path: " + str(path)
         print "mknod mode: " + str(mode)
         print "mknod dev: " + str(dev)
+        if self._CheckDirPerms(path, os.R_OK) == False:
+            return -errno.EACCES
         
         # Make sure mode is S_IFREG, otherwise we don't support mknod for it
         if (mode & stat.S_IFREG) != stat.S_IFREG:
@@ -360,6 +449,9 @@ class PyCloudGate(Fuse):
         return 0
 
     def mkdir(self, path, mode):
+        if self._CheckDirPerms(path, os.R_OK) == False:
+            return -errno.EACCES
+
         p = self._FindTLD(path)
         uf_path = unfusify_path(path)
         path_parts = uf_path.split("/")
@@ -382,6 +474,7 @@ class PyCloudGate(Fuse):
             
 
     def flush(self, filename):
+        #TODO: Check permissions for this?
         if self._cache.CheckOpen(filename) == False:
             return ## We have nothing to flush 
 
@@ -397,7 +490,7 @@ class PyCloudGate(Fuse):
     def fsync(self, filename, isfilesync):
         ## isfilesync doesnt matter to us
         return self.flush(filename)
-            
+
 """
     def readlink(self, path):
         return os.readlink("." + path)
