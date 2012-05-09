@@ -15,6 +15,8 @@ class SugarSyncWrapper(object):
         self._sync = SugarSync(conf=conf)
         self._tldChanged = True
         self._created = {}
+
+        self._folders = {}
         self._GenCache()
         print self._cache
 
@@ -28,14 +30,18 @@ class SugarSyncWrapper(object):
                 self._RecursiveCache(self._cache[x], "")
 
     def _RecursiveCache (self, folder, basepath):
+        fpath = basepath + folder.GetName()
         basepath = basepath + folder.GetName() + "/"
         dirs = self._sync.GetFolders(folder)
+        self._folders[fpath] = [ ]
         for x in dirs:
             self._cache[basepath + x.GetName()] = x
+            self._folders[fpath].append(x)
             self._RecursiveCache(x, basepath)
 
         files = self._sync.ListFiles(folder)
         for x in files:
+            self._folders[fpath].append(x)
             self._cache[basepath + x.GetName()] = x
 
         return
@@ -163,6 +169,8 @@ class SugarSyncWrapper(object):
                 self._cache[pathname] = x
                 break
 
+        self._folders[folderpath].append(self._cache[pathname])
+
         print "SUGERSYNC STATUS - " + str(ret["status"])
         self._created[pathname] = "yes"
         return ret
@@ -181,7 +189,14 @@ class SugarSyncWrapper(object):
         fileID = self._LookupPathname(pathname)
         ret["status"] = self._sync.DeleteFile(fileID)
         if ret["status"] == True:
+            if self._cache[pathname] == "SyncFile":
+                
+                folderpath = "/".join(pathname.split("/")[:-1])
+                self._folders[folderpath].remove(self._cache[pathname])
+            else:
+                del self._folders[pathname]
             del self._cache[pathname]
+            
         return ret
 
     def GetPermissionFile (self):
@@ -259,6 +274,7 @@ class SugarSyncWrapper(object):
         path =  pathname.split("/")
         dir = self._LookupPathname("/".join(path[:-1]))
         ret["status"] = self._sync.CreateFolder(dir, path[-1])
+        self._folders[pathname] = [] 
         return ret
 
     def Readdir (self, path):
@@ -274,8 +290,7 @@ class SugarSyncWrapper(object):
         
         dir = self._LookupPathname(path)
 
-        pathlist = self._sync.GetFolders(dir)
-        pathlist += self._sync.ListFiles(dir)
+        pathlist = self._folders[path] 
         ret["filenames"] = []
         for x in pathlist:
             ret["filenames"].append(x.GetName())
