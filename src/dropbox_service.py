@@ -20,6 +20,7 @@ class DropboxService(ServiceObject):
         """
 
         ret = {}
+        ret["status"] = True
         for direntry in self.service.readdir('/',0):
             if not direntry == "." and not direntry == "..":
                 ret[direntry] = self
@@ -176,21 +177,18 @@ class DropboxService(ServiceObject):
 
         return ret
 
-    def Readdir (self, path, offset):
+    def Readdir (self, path):
         """ Return a directory listing for the given directory at offset
             
             returns a dictionary with the following keys:
 
                 ret["status"] = True for completed, False for failed
-                ret["filename"] =  filename for file at offset in directory
+                ret["filenames"] =  filename for file at offset in directory
         """
         ret = {}
         retValue = self.service.readdir(path, 0)
-        if len(retValue) < offset + 1:
-            ret["status"] = False
-        else:
-            ret["status"] = True
-            ret["filename"] = retValue[offset]
+        ret["status"] = True
+        ret["filenames"] = retValue
 
         return ret
 

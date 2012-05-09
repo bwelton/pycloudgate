@@ -79,7 +79,7 @@ class PyCloudGate(Fuse):
         #TODO: Handle errors of unauthenticated services
         #self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
         self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
-        #self._servobjs["DropBox"] = DropBoxService()
+        #self._servobjs["DropBox"] = DropboxService()
 
         ## loop over all successfully created interfaces
         for s in self._servobjs:

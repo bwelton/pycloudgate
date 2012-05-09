@@ -85,10 +85,15 @@ class DropboxLowLevel:
         """
        
         self.cache[currentPath] = self.api_client.metadata(currentPath)
+        if self.cache[currentPath]["is_dir"] == False:
+            return
         directory = self.readdir(currentPath, 0)
         for entry in directory:
             if not entry == "." and not entry == "..":
-                self.BuildIndex(currentPath + "/" + entry) 
+                if currentPath == "/":
+                    self.BuildIndex("/" + entry)
+                else:
+                    self.BuildIndex(currentPath + "/" + entry) 
  
 
 
@@ -99,14 +104,13 @@ class DropboxLowLevel:
                 resp = self.cache[path]
             else:
                 resp = self.api_client.metadata(path)
-                self.cache[path] = resp
-          
-
+                self.cache[path] = resp         
+            
             if 'is_deleted' in resp and resp['is_deleted']:
                 return -errno.ENOENT
             
-           
-            timeStruct = time.strptime(resp["client_mtime"], "%a, %d %b %Y %H:%M:%S +0000")
+                   
+            timeStruct = time.strptime(resp["modified"], "%a, %d %b %Y %H:%M:%S +0000")
             st.st_mtime = int(time.mktime(timeStruct))
 
                 
@@ -117,7 +121,6 @@ class DropboxLowLevel:
             else:
                 st.st_mode = stat.S_IFREG | 0755
                 st.st_nlink = 1
-            self.cache[path] = st
             return st
         except rest.ErrorResponse:
             return -errno.ENOENT
@@ -135,9 +138,10 @@ class DropboxLowLevel:
             return dirs;
        
         if 'contents' in resp:
-            for r in  resp['contents']:
-                if r['is_dir']:
-                    dirs.append((os.path.basename(r['path'])))
+            for r in resp['contents']:
+                if 'is_deleted' in r and r['is_deleted']:
+                    continue
+                dirs.append((os.path.basename(r['path'])))
         else:
             print path, "is a file!"
  
@@ -200,7 +204,9 @@ class DropboxLowLevel:
 
     def mknod(self, path, mode, dev):
         try:
-	    self.cache[path] = self.api_client.put_file(path, " ") 
+	    self.cache[path] = self.api_client.put_file(path, " ")
+            parent = self.getParentFolder(path)
+            self.cache[parent]["contents"].append(self.cache[path])
         except rest.ErrorResponse:
             return -errno.EACCES
 
@@ -213,6 +219,11 @@ class DropboxLowLevel:
     def unlink(self, path):
         try:
             self.cache[path] = self.api_client.file_delete(path)
+            parent = self.getParentFolder(path)
+            for item in self.cache[parent]["contents"]:
+                if item["path"] == path:
+                    self.cache[parent]["contents"].remove(item)
+                    break                   
         except rest.ErrorResponse:
             return -errno.EACCES
 
@@ -226,6 +237,8 @@ class DropboxLowLevel:
     def mkdir(self, path, mode):
         try:
             self.cache[path] = self.api_client.file_create_folder(path)
+            parent = self.getParentFolder(path)
+            self.cache[parent]["contents"].append(self.cache[path])
         except rest.ErrorResponse:
             return -errno.EACCES
 
@@ -241,10 +254,21 @@ class DropboxLowLevel:
         if pad > 0:
             f = f + ' ' * pad
         f = f[:pos]
-
+        if f == "":
+            f = " "
         try:
             self.cache[path] = self.api_client.put_file(path, f)
         except rest.ErrorResponse:
             return -errno.EACCES
 
-
+    def getParentFolder(self, path):
+        print "getParentFolder"
+        print path
+        filename = path.split("/")[-1]
+        print filename
+        parent = path.split("/" + filename)
+        print parent
+        if parent[0] == "":
+            return "/"
+        else:
+            return parent[0]
