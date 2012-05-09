@@ -14,6 +14,7 @@ class SugarSyncWrapper(object):
         conf.read(filename)
         self._sync = SugarSync(conf=conf)
         self._tldChanged = True
+        self._created = {}
 
     def _PrepPath(self, path):
         if path[0] == "/":
@@ -71,6 +72,7 @@ class SugarSyncWrapper(object):
             
             Returns a syncfile class for the path specified (None if does not exist)
         """
+        pathname = self._PrepPath(pathname)
         path =  pathname.split("/")
         if pathname in self._cache:
             return self._cache[pathname]
@@ -101,6 +103,12 @@ class SugarSyncWrapper(object):
         """
         ret = {}
         pathname = self._PrepPath(pathname)
+
+        if pathname in self._created:
+            ret["status"] = True
+            ret["data"] = ""
+            return  ret
+
         fileID = self._LookupPathname(pathname)
         data = self._sync.GetFile(fileID)
         ret["status"] = True
@@ -120,6 +128,9 @@ class SugarSyncWrapper(object):
         """
         ret = {}
         pathname = self._PrepPath(pathname)
+        if pathname in self._created:
+            del self._created[pathname]
+
         fileID = self._LookupPathname(pathname)
         ret["status"] = self._sync.WriteFile(fileID, data)
         return ret
@@ -138,6 +149,8 @@ class SugarSyncWrapper(object):
         folderpath = "/".join(pathname.split("/")[:-1])
         folderID = self._LookupPathname(folderpath)
         ret["status"] = self._sync.CreateFile(folderID, pathname.split("/")[-1])
+        print "SUGERSYNC STATUS - " + str(ret["status"])
+        self._created[pathname] = "yes"
         return ret
 
     def Unlink (self, pathname):
