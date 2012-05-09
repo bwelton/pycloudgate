@@ -15,6 +15,30 @@ class SugarSyncWrapper(object):
         self._sync = SugarSync(conf=conf)
         self._tldChanged = True
         self._created = {}
+        self._GenCache()
+        print self._cache
+
+    def _GenCache (self):
+        ## Generate the Cache
+        tlds = self.GetTLD()
+        for x in tlds.keys():
+            if x == "status": 
+                continue
+            else:
+                self._RecursiveCache(self._cache[x], "")
+
+    def _RecursiveCache (self, folder, basepath):
+        basepath = basepath + folder.GetName() + "/"
+        dirs = self._sync.GetFolders(folder)
+        for x in dirs:
+            self._cache[basepath + x.GetName()] = x
+            self._RecursiveCache(x, basepath)
+
+        files = self._sync.ListFiles(folder)
+        for x in files:
+            self._cache[basepath + x.GetName()] = x
+
+        return
 
     def _PrepPath(self, path):
         if path[0] == "/":
@@ -72,26 +96,10 @@ class SugarSyncWrapper(object):
             
             Returns a syncfile class for the path specified (None if does not exist)
         """
-        pathname = self._PrepPath(pathname)
-        path =  pathname.split("/")
-        if pathname in self._cache:
+        if pathname not in self._cache:
+            return None
+        else:
             return self._cache[pathname]
-        if self._tldChanged:
-            self.GetTLD()
-            self._tldChanged = False
-        
-        prev = None
-
-        if path[0] in self._cache:
-            prev = self._cache[path[0]]
-        
-        if prev == None:
-            return
-        
-        if len(path) == 1:
-            return prev
-
-        return self._RecursiveLookup(prev, path[1], path, path[2:])
 
     def Read (self, pathname, offset, size): 
         """ similar to fuse. returns data as a string 
@@ -149,6 +157,12 @@ class SugarSyncWrapper(object):
         folderpath = "/".join(pathname.split("/")[:-1])
         folderID = self._LookupPathname(folderpath)
         ret["status"] = self._sync.CreateFile(folderID, pathname.split("/")[-1])
+        dirs = self._sync.ListFiles(folderID)
+        for x in dirs:
+            if pathname.split("/")[-1] == x.GetName():
+                self._cache[pathname] = x
+                break
+
         print "SUGERSYNC STATUS - " + str(ret["status"])
         self._created[pathname] = "yes"
         return ret
