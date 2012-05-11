@@ -189,8 +189,7 @@ class SugarSyncWrapper(object):
         fileID = self._LookupPathname(pathname)
         ret["status"] = self._sync.DeleteFile(fileID)
         if ret["status"] == True:
-            if self._cache[pathname] == "SyncFile":
-                
+            if self._cache[pathname].GetType() == "SyncFile": 
                 folderpath = "/".join(pathname.split("/")[:-1])
                 self._folders[folderpath].remove(self._cache[pathname])
             else:
@@ -313,7 +312,10 @@ class SugarSyncWrapper(object):
             
             ret["status"] = True
             if self._cache[path].GetType() == "SyncFile":
-                ret["st_size"] = int(self._cache[path].GetSize())
+                if int(self._cache[path].GetSize()) < 0:
+                    ret["st_size"] = 0
+                else: 
+                    ret["st_size"] = int(self._cache[path].GetSize())
                 ret["st_mtime"] = int(time.mktime(self._cache[path].GetModified().timetuple()))
                 ret["st_mode"] = stat.S_IFREG
             else:
@@ -329,7 +331,11 @@ class SugarSyncWrapper(object):
                 return ret
 
             if self._cache[path].GetType() == "SyncFile":
-                ret["st_size"] = int(self._cache[path].GetSize())
+                if int(self._cache[path].GetSize()) < 0:
+                    ret["st_size"] = 0
+                else: 
+                    ret["st_size"] = int(self._cache[path].GetSize())
+
                 ret["st_mtime"] = int(time.mktime(self._cache[path].GetModified().timetuple()))
                 ret["st_mode"] = stat.S_IFREG
             else:

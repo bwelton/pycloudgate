@@ -280,12 +280,14 @@ class PyCloudGate(Fuse):
 
     def unlink(self, path):
         # Only owner of file can delete it
+        print "UNLINKING FILE - " + path
         if self._IsOwner(path) == False:
             return -errno.EACCES
 
         p = self._FindTLD(path)
         uf_path = unfusify_path(path)
         if p != None:
+            print "CALLING UNLINK + " + path
             ret = p.Unlink(path)
             if ret["status"] == False:
                 return -errno.ENOENT
@@ -346,16 +348,11 @@ class PyCloudGate(Fuse):
                 return -errno.ENOENT
         
     def write(self, path, buf, offset):
-        print "FB: write " + path
-        print "write buf: " + str(buf)
-        print "write offset: " + str(offset)
         if self._CheckPerms(path, os.W_OK) == False:
             return -errno.EACCES
         if self._cache.CheckOpen(path):
-            print "FB: write cache hit"
             self._cache.Write(path, buf, offset)
         else:
-            print "FB: write cache miss"
             p = self._FindTLD(path)
             if p != None:
                 a = p.GetAttr(path)
