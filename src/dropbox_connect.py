@@ -67,10 +67,12 @@ class DropboxLowLevel:
 
         self.sess = StoredSession(filename, APP_KEY, APP_SECRET,  access_type=ACCESS_TYPE)
         self.sess.load_creds()
+
         while not self.sess.is_linked():
             try:
                 self.sess.link()
             except rest.ErrorResponse, e:
+                print "Error linking!"
                 pass
 
         self.api_client = client.DropboxClient(self.sess)
@@ -116,10 +118,10 @@ class DropboxLowLevel:
                 
             st.st_size = resp['bytes']
             if resp["is_dir"]:
-	        st.st_mode = stat.S_IFDIR | 0755
+	        st.st_mode = stat.S_IFDIR
                 st.st_nlink = 2
             else:
-                st.st_mode = stat.S_IFREG | 0755
+                st.st_mode = stat.S_IFREG
                 st.st_nlink = 1
             return st
         except rest.ErrorResponse:

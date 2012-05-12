@@ -11,9 +11,9 @@ import fuse
 from fuse import Fuse
 
 from CacheBase import CacheClass
-#from GoogleCloudInterface import GoogleCloudService
-from SugarSyncInterface import SugarSyncWrapper
-#from dropbox_service import DropboxService
+from GoogleCloudInterface import GoogleCloudService
+#from SugarSyncInterface import SugarSyncWrapper
+from dropbox_service import DropboxService
 
 
 if not hasattr(fuse, '__version__'):
@@ -77,9 +77,9 @@ class PyCloudGate(Fuse):
 
         ## Initialize Classes
         #TODO: Handle errors of unauthenticated services
-        #self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
-        self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
-        #self._servobjs["DropBox"] = DropboxService()
+        self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
+        #self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
+        self._servobjs["DropBox"] = DropboxService()
 
         ## loop over all successfully created interfaces
         for s in self._servobjs:
@@ -112,8 +112,10 @@ class PyCloudGate(Fuse):
                         else:
                             pass
                 else:
-                    # Can write any hash to permission file
-                    pass
+                    print "Did not find permission file, attempting to create it."
+                    wp_ret = serv.WritePermissions({})
+                    if wp_ret["status"] == False:
+                        print "Failed to create permission file for " + str(s)
             
 
         Fuse.__init__(self, *args, **kw)
@@ -379,7 +381,17 @@ class PyCloudGate(Fuse):
             return -errno.ENOENT
 
         # TODO: We don't store sticky bit
+        old_perms = self._perms.get(path, None)
         self._perms[path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
+        print p
+        wp_ret = p.WritePermissions(self._perms)
+        if wp_ret["status"] == False:
+            if old_perms == None:
+                del self._perms[path]
+            else:
+                self._perms[path] = old_perms
+            return -errno.EIO
+
         return 0
     
     def utime(self, path, times):

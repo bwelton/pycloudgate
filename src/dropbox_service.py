@@ -6,6 +6,7 @@ from dropbox import client, rest, session
 class DropboxService(ServiceObject):
     def __init__(self, filename="dropbox_token_store.txt"):
         self.service = dropbox_connect.DropboxLowLevel(filename)
+        self.perm_name = "/.dropbox_perms"
         
     
     def GetTLD (self):
@@ -108,14 +109,21 @@ class DropboxService(ServiceObject):
         """
         ret = {}
         table = {}
-        permit = self.service.read('/.permission', 1024 * 1024, 0)
+        permit = self.service.read(self.perm_name, 1024 * 1024, 0)
+        print "permit: " + str(permit)
         if permit == -errno.EACCES:
             ret["status"] = False
+        elif permit == " ":
+            # This means the permissions file was empty
+            ret["status"] = True
+            ret["data"] = {}
         else:
             ret["status"] = True
             for entry in permit.split("\n"):
-                filename,uid,gid,mode=entry.split()
-                table[filename] = [int(uid), int(gid), int(mode)]
+                tmp_entries = entry.split()
+                if len(tmp_entries) == 4:
+                    filename,uid,gid,mode = tmp_entries
+                    table[filename] = [int(uid), int(gid), int(mode)]
             ret["data"] = table
         return ret
 
@@ -131,10 +139,19 @@ class DropboxService(ServiceObject):
         ret = {}
 
         f = ""
+        if len(hashtable.keys()) == 0:
+            # Create permissions only readable by owner
+            mk_ret = self.service.mknod(self.perm_name, 256, 0)
+            if mk_ret == -errno.EACCES:
+                ret["status"] = False
+            else:
+                ret["status"] = True
+            # Return early to avoid writing an empty file to Dropbox
+            return ret
         for filename in hashtable.keys():
-            f = f + filename + " " + str(hashtable[filename][0]) + " " + str(hashtable[filename][1]) + " " + str(hashtable[filename][2])
+            f = f + filename + " " + str(hashtable[filename][0]) + " " + str(hashtable[filename][1]) + " " + str(hashtable[filename][2]) + "\n"
 
-        retValue = self.service.write("/.permission", f, 0)
+        retValue = self.service.write(self.perm_name, f, 0)
         if retValue == -errno.EACCES:
             ret["status"] = False
         else:
