@@ -6,6 +6,7 @@ import os, sys
 import errno
 import stat
 import fcntl
+from datetime import datetime
 
 import fuse
 from fuse import Fuse
@@ -71,6 +72,7 @@ class PyCloudGate(Fuse):
     def __init__(self, *args, **kw):
         self._cache = CacheClass()
         self._services = ["DropBox", "GoogleCloud", "SugarSync"]  
+        self._tldWritable = ["DropBox", "GoogleCloud"]
         self._servobjs = {}
         self._directory = {} # Directory map
         self._perms = {}
@@ -82,6 +84,11 @@ class PyCloudGate(Fuse):
         self._servobjs["GoogleCloud"] = GoogleCloudService("cs699wisc_samanas")
         #self._servobjs["SugarSync"] = SugarSyncWrapper("conf.cfg")
         self._servobjs["DropBox"] = DropboxService()
+
+        if self._servobjs["GoogleCloud"] == None:
+            self._tldWritable.remove("GoogleCloud")
+        if self._servobjs["DropBox"] == None:
+            self._tldWritable.remove("DropBox")
 
         ## loop over all successfully created interfaces
         for s in self._servobjs:
@@ -246,11 +253,13 @@ class PyCloudGate(Fuse):
     def _PickService(self):
         #TODO: If we are making a file in the TLD, use policy to choose which
         # service to place it in. 
-        serv_list = self._servobjs.keys()
-        if len(serv_list) < 1:
+        if len(self._tldWritable) < 1:
             return None
-        # just put it in the first one for now
-        return self._servobjs[serv_list[0]]
+        dt1 = datetime.now()
+        rand_index = dt1.microsecond % len(self._tldWritable)
+
+        print "Picked " + str(self._tldWritable[rand_index])
+        return self._servobjs[self._tldWritable[rand_index]]
 
     def _CheckPerms(self, path, rwx):
         """ 
