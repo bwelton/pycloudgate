@@ -111,13 +111,19 @@ class PyCloudGate(Fuse):
                 else:
                     print "Getting top-level directory of "+str(s)+" failed."
                 # Get permissions
+                print "Setting up permissions for " + str(serv)
                 tmp_perms = serv.GetPermissionFile()
+                self._perms[serv] = {}
                 if tmp_perms["status"] == True:
+                    print "data we got: " + str(tmp_perms["data"])
                     for fn in tmp_perms["data"].keys():
-                        if fn not in self._perms:
-                            self._perms[fusify_path(fn)] = tmp_perms["data"][fn]
+                        print "Key: " + str(fn)
+                        if fn not in self._perms[serv]:
+                            print "Add perm " + str(fusify_path(fn)) + " to " + str(serv)
+                            print "thing: " + str(tmp_perms["data"][fn])
+                            self._perms[serv][fusify_path(fn)] = tmp_perms["data"][fn]
                         else:
-                            pass
+                            print "Warning! duplicate permission records for the same cloud service"
                 else:
                     print "Did not find permission file, attempting to create it."
                     wp_ret = serv.WritePermissions({})
@@ -138,6 +144,8 @@ class PyCloudGate(Fuse):
 
         print "Finished with building TLD index: "
         print self._directory
+        print "Resulting permissions: "
+        print self._perms
             
 
         Fuse.__init__(self, *args, **kw)
@@ -177,7 +185,11 @@ class PyCloudGate(Fuse):
             st.st_mtime = ga_ret["st_mtime"]
             st.st_mode = ga_ret["st_mode"]
             # Handle permissions
-            perm_list = self._perms.get(path, None)
+            perm_list = None
+            if self._directory[tld] in self._perms:
+                perm_list = self._perms[self._directory[tld]].get(self._GetTruePath(path), None)
+            else:
+                print "getattr did not find " + str(self._directory[tld]) + " in perms " + str(path)
             if perm_list != None:
                 st.st_uid = perm_list[0]
                 st.st_gid = perm_list[1]
@@ -224,7 +236,7 @@ class PyCloudGate(Fuse):
 
             returns the class to call operation on (or None if not availible)
         """
-        print self._directory
+        #print self._directory
         tmp = path[1:]
         tmp = tmp.split("/")
         if tmp[0] in self._directory:
@@ -250,11 +262,16 @@ class PyCloudGate(Fuse):
 
         returns True if operation is allowed, False if not
         """
+        # Recover correct object for perms
+        p = self._FindTLD(path)
+        if p == None:
+            return True
         # If no permission is set, it is assumed the user can do anything
-        if path not in self._perms:
+        true_path = self._GetTruePath(path)
+        if true_path not in self._perms[p]:
             return True
 
-        cur_perms = self._perms[path]
+        cur_perms = self._perms[p][true_path]
         cur_uid = os.getuid()
         cur_gid = os.getgid()
         perm_level = 0
@@ -307,8 +324,10 @@ class PyCloudGate(Fuse):
         return self._CheckPerms(dir_name[0], rwx)
 
     def _IsOwner(self, path):
-        if path in self._perms:
-            if os.getuid() != self._perms[path][0]:
+        p = self._FindTLD(path)
+        true_path = self._GetTruePath(path)
+        if true_path in self._perms[p]:
+            if os.getuid() != self._perms[p][true_path][0]:
                 return False
         return True
 
@@ -331,8 +350,9 @@ class PyCloudGate(Fuse):
                 return -errno.ENOENT
 
             # Remove record from permissions
-            if path in self._perms:
-                del self._perms[path]
+            true_path = self._GetTruePath(path)
+            if true_path in self._perms[p]:
+                del self._perms[p][true_path]
 
             # Remove from TLD
             path_parts = uf_path.split("/")
@@ -427,15 +447,16 @@ class PyCloudGate(Fuse):
 
     def _AddPermEntry(self, serv_obj, path, mode):
         # TODO: We don't store sticky bit
-        old_perms = self._perms.get(path, None)
-        self._perms[path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
+        true_path = self._GetTruePath(path)
+        old_perms = self._perms[serv_obj].get(true_path, None)
+        self._perms[serv_obj][true_path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
         print serv_obj
-        wp_ret = serv_obj.WritePermissions(self._perms)
+        wp_ret = serv_obj.WritePermissions(self._perms[serv_obj])
         if wp_ret["status"] == False:
             if old_perms == None:
-                del self._perms[path]
+                del self._perms[serv_obj][true_path]
             else:
-                self._perms[path] = old_perms
+                self._perms[serv_obj][path] = old_perms
             return None
         return 0
     
@@ -557,7 +578,7 @@ class PyCloudGate(Fuse):
             return -errno.EINVAL ## Replace with appropriate error
         if len(path_parts) == 1:
             self._directory[uf_path] = p
-        self._perms[path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
+        self._perms[p][path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
 
         return 0
             
