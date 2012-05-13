@@ -74,6 +74,8 @@ class PyCloudGate(Fuse):
         self._servobjs = {}
         self._directory = {} # Directory map
         self._perms = {}
+        self._truepath = {}
+        self._dupes = {}
 
         ## Initialize Classes
         #TODO: Handle errors of unauthenticated services
@@ -97,10 +99,15 @@ class PyCloudGate(Fuse):
                         #TODO: I'm confused about policy, so I'm just
                         # skipping duplicates right now...
                         if tld_key in self._directory:
-                            print "Skipping duplicate TLD file name " + tld_key
-                            continue
-                        # tmp_tld could just be replaced by serv??
-                        self._directory[tld_key] = tmp_tld[direntry]
+                            print "Found duplicate: " + str(tld_key)
+                            if tld_key in self._dupes:
+                                self._dupes[fusify_path(tld_key)].append(tmp_tld[direntry])
+                            else:
+                                self._dupes[fusify_path(tld_key)] = [tmp_tld[direntry]]
+                        else:
+                            # tmp_tld could just be replaced by serv??
+                            self._directory[tld_key] = tmp_tld[direntry]
+
                 else:
                     print "Getting top-level directory of "+str(s)+" failed."
                 # Get permissions
@@ -116,6 +123,21 @@ class PyCloudGate(Fuse):
                     wp_ret = serv.WritePermissions({})
                     if wp_ret["status"] == False:
                         print "Failed to create permission file for " + str(s)
+
+        for dup_key in self._dupes:
+            for d in self._dupes[dup_key]:
+                dup_num = 1
+                # Construct string with integer for duplicate
+                attempt = str(dup_key) + "[" + str(dup_num) + "]"
+                while unfusify_path(attempt) in self._directory:
+                    dup_num += 1
+                    attempt = str(dup_key) + "[" + str(dup_num) + "]"
+                print "Adding " + str(attempt) + " which has value " + str(d)
+                self._directory[unfusify_path(attempt)] = d
+                self._truepath[attempt] = dup_key
+
+        print "Finished with building TLD index: "
+        print self._directory
             
 
         Fuse.__init__(self, *args, **kw)
@@ -143,7 +165,8 @@ class PyCloudGate(Fuse):
         tld = path_parts[1]
         if tld in self._directory:
             # Choose appropriate object to call GetAttr on with tld
-            ga_ret = self._directory[tld].GetAttr(path)
+            print self._truepath
+            ga_ret = self._directory[tld].GetAttr(self._GetTruePath(path))
             if ga_ret["status"] == False:
                 return -errno.ENOENT
             st = MyStat()
@@ -169,6 +192,19 @@ class PyCloudGate(Fuse):
         else:
             return -errno.ENOENT
     
+    def _GetTruePath(self, path):
+        tmp_path = path
+        path_appendage = ""
+        if path.count('/') > 1:
+            path_list = path.split('/')
+            tmp_path = "/" + str(path_list[1])
+            path_list2 = path.split(tmp_path)
+            path_appendage = path_list2[-1]
+
+        if tmp_path in self._truepath:
+            return self._truepath[tmp_path] + str(path_appendage)
+        return path
+    
     def readdir(self, path, offset):
         # Special case for top-level directory
         if path == self._root:
@@ -178,7 +214,7 @@ class PyCloudGate(Fuse):
             path_parts = path.split("/")
             tld = path_parts[1]
             if tld in self._directory:
-                rd_ret = self._directory[tld].Readdir(path)
+                rd_ret = self._directory[tld].Readdir(self._GetTruePath(path))
                 if rd_ret["status"] == True:
                     for name in rd_ret["filenames"]:
                         yield fuse.Direntry(name)
@@ -290,7 +326,7 @@ class PyCloudGate(Fuse):
         uf_path = unfusify_path(path)
         if p != None:
             print "CALLING UNLINK + " + path
-            ret = p.Unlink(path)
+            ret = p.Unlink(self._GetTruePath(path))
             if ret["status"] == False:
                 return -errno.ENOENT
 
@@ -302,6 +338,9 @@ class PyCloudGate(Fuse):
             path_parts = uf_path.split("/")
             if len(path_parts) == 1:
                 del self._directory[uf_path]
+
+            if path in self._truepath:
+                del self._truepath[path]
         else:
             return -errno.ENOENT
 
@@ -325,11 +364,11 @@ class PyCloudGate(Fuse):
             print "FB: read cache miss"
             p = self._FindTLD(path)
             if p != None:
-                a = p.GetAttr(path)
+                a = p.GetAttr(self._GetTruePath(path))
                 ## Read the entire current file if size < 10 MB
                 if a["st_size"] < 10000000:
                     
-                    r = p.Read(path, 0, a["st_size"])
+                    r = p.Read(self._GetTruePath(path), 0, a["st_size"])
                     if r["status"] == False:
                         return -errno.EINVAL
                     data = r["data"]
@@ -341,7 +380,7 @@ class PyCloudGate(Fuse):
                     else:
                         return -errno.ENOENT
                 else:
-                    data = p.Read(path, offset, length)
+                    data = p.Read(self._GetTruePath(path), offset, length)
                     if data["status"] == False:
                         return -errno.EINVAL
                     else:
@@ -357,8 +396,8 @@ class PyCloudGate(Fuse):
         else:
             p = self._FindTLD(path)
             if p != None:
-                a = p.GetAttr(path)
-                r = p.Read(path, 0, a["st_size"])
+                a = p.GetAttr(self._GetTruePath(path))
+                r = p.Read(self._GetTruePath(path), 0, a["st_size"])
                 if r["status"] == False:
                     return -errno.EINVAL
                 data = r["data"]
@@ -374,24 +413,30 @@ class PyCloudGate(Fuse):
             return -errno.EACCES
         p = self._FindTLD(path)
         if p != None:
-            ga_ret = p.GetAttr(path)
+            ga_ret = p.GetAttr(self._GetTruePath(path))
             if ga_ret["status"] == False:
                 return -errno.ENOENT
         else:
             return -errno.ENOENT
 
+        ap_ret = self._AddPermEntry(p, path, mode)
+        if ap_ret == None:
+            return -errno.EIO
+
+        return 0
+
+    def _AddPermEntry(self, serv_obj, path, mode):
         # TODO: We don't store sticky bit
         old_perms = self._perms.get(path, None)
         self._perms[path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
-        print p
-        wp_ret = p.WritePermissions(self._perms)
+        print serv_obj
+        wp_ret = serv_obj.WritePermissions(self._perms)
         if wp_ret["status"] == False:
             if old_perms == None:
                 del self._perms[path]
             else:
                 self._perms[path] = old_perms
-            return -errno.EIO
-
+            return None
         return 0
     
     def utime(self, path, times):
@@ -415,7 +460,7 @@ class PyCloudGate(Fuse):
             print "FB: Truncate missed in cache"
             p = self._FindTLD(path)
             if p != None:
-                status = p.Truncate(path, len) 
+                status = p.Truncate(self._GetTruePath(path), len) 
                 if status["status"] != True:
                     return -errno.ENOENT
             else:
@@ -426,6 +471,8 @@ class PyCloudGate(Fuse):
         return 0
 
     def access(self, path, mode):
+        print "access path: " + str(path)
+        print "access mode: " + str(mode)
         return 0
 
     def getxattr(self, path, name, size): 
@@ -442,7 +489,7 @@ class PyCloudGate(Fuse):
             return 0
         p = self._FindTLD(path)
         if p != None:
-            status = p.Write(path, data)
+            status = p.Write(self._GetTruePath(path), data)
             if status["status"] == False:
                 return -errno.ENOENT
         else:
@@ -484,7 +531,9 @@ class PyCloudGate(Fuse):
             self._directory[path_parts[0]] = p
 
         # Add to permissions
-        self._perms[path] = [os.getuid(), os.getgid(), stat.S_IMODE(mode)]
+        ap_ret = self._AddPermEntry(p, path, mode)
+        if ap_ret == None:
+            return -errno.EIO
 
         return 0
 
